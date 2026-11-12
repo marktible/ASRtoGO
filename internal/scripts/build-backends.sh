@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-source "$ROOT/scripts/dependencies.sh"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+source "$ROOT/internal/scripts/dependencies.sh"
 check_dependencies
-mkdir -p "$ROOT/backends" "$ROOT/data"
-chmod 700 "$ROOT/data"
+mkdir -p "$ROOT/internal/backends" "$ROOT/internal/data"
+chmod 700 "$ROOT/internal/data"
 
-BUILD_JOBS="${BUILD_JOBS:-$(python3 "$ROOT/scripts/hardware.py" | python3 -c 'import json,sys; print(json.load(sys.stdin)["build_jobs"])')}"
+BUILD_JOBS="${BUILD_JOBS:-$(python3 "$ROOT/internal/scripts/hardware.py" | python3 -c 'import json,sys; print(json.load(sys.stdin)["build_jobs"])')}"
 [[ $BUILD_JOBS =~ ^[1-9][0-9]*$ ]] || { echo 'BUILD_JOBS must be a positive integer.' >&2; exit 1; }
 NATIVE="${GGML_NATIVE:-ON}"
 LTO="${GGML_LTO:-ON}"
@@ -62,21 +62,19 @@ PY
 }
 
 echo "Building Release + Vulkan, native CPU=$NATIVE, LTO=$LTO, parallel jobs=$BUILD_JOBS"
-clone_backend https://github.com/ggml-org/llama.cpp.git "$ROOT/backends/llama.cpp" "${LLAMA_REF:-}"
-clone_backend https://github.com/CrispStrobe/CrispASR.git "$ROOT/backends/CrispASR" "${CRISPASR_REF:-}"
-build_backend "$ROOT/backends/llama.cpp" llama-server \
+clone_backend https://github.com/ggml-org/llama.cpp.git "$ROOT/internal/backends/llama.cpp" "${LLAMA_REF:-}"
+clone_backend https://github.com/CrispStrobe/CrispASR.git "$ROOT/internal/backends/CrispASR" "${CRISPASR_REF:-}"
+build_backend "$ROOT/internal/backends/llama.cpp" llama-server \
   -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_TOOLS=ON \
   -DLLAMA_BUILD_SERVER=ON -DLLAMA_BUILD_UI=OFF -DLLAMA_OPENSSL=OFF -DLLAMA_CURL=OFF
-cmake --build "$ROOT/backends/llama.cpp/build-studio" --config Release --parallel "$BUILD_JOBS" --target llama-cli
-build_backend "$ROOT/backends/CrispASR" crispasr \
+build_backend "$ROOT/internal/backends/CrispASR" crispasr \
   -DCRISPASR_BUILD_TESTS=OFF -DCRISPASR_BUILD_EXAMPLES=ON -DCRISPASR_BUILD_SERVER=ON \
   -DCRISPASR_PORTABLE_CPU=OFF -DCRISPASR_CURL=OFF
-for binary in "$ROOT/backends/llama.cpp/build-studio/bin/llama-server" \
-              "$ROOT/backends/llama.cpp/build-studio/bin/llama-cli" \
-              "$ROOT/backends/CrispASR/build-studio/bin/crispasr"; do
+for binary in "$ROOT/internal/backends/llama.cpp/build-studio/bin/llama-server" \
+              "$ROOT/internal/backends/CrispASR/build-studio/bin/crispasr"; do
   [[ -x $binary ]] || { echo "Build did not produce $binary" >&2; exit 1; }
-  "$binary" --help > "$ROOT/data/$(basename "$binary")-check.log" 2>&1 || {
-    echo "Backend cannot launch: $binary. Check data/$(basename "$binary")-check.log" >&2
+  "$binary" --help > "$ROOT/internal/data/$(basename "$binary")-check.log" 2>&1 || {
+    echo "Backend cannot launch: $binary. Check internal/data/$(basename "$binary")-check.log" >&2
     exit 1
   }
 done

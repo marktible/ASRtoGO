@@ -7,7 +7,7 @@ Base: `http://<PC-LAN-IP>:8765`. Browser and client must use the login session c
 | `GET` | `/api/session` | Current login status, `{authenticated, csrf}` |
 | `POST` | `/api/login` | `{password}`; issues an HttpOnly session cookie and CSRF token |
 | `POST` | `/api/logout` | End session |
-| `GET` | `/api/models` | Available local LLM/ASR model IDs (absolute local paths) |
+| `GET` | `/api/models` | Available local LLM/ASR model IDs (project-relative paths; external configured models use absolute paths) |
 | `GET` | `/api/status` | Backend state, ownership, active/queued jobs |
 | `POST` | `/api/start` | `{which:'llm'|'asr', model:'<listed ID>'}` |
 | `POST` | `/api/stop` | `{which:'llm'|'asr'}` (app-managed servers only) |

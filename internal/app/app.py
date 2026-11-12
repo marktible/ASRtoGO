@@ -25,11 +25,11 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
 ASSETS = Path(__file__).resolve().parent
-ROOT = ASSETS.parent
+ROOT = ASSETS.parent.parent
 sys.path.insert(0, str(ROOT))
-from scripts.hardware import detect
+from internal.scripts.hardware import detect
 
-BASE = ROOT / 'data'
+BASE = ROOT / 'internal/data'
 if not (BASE / 'config.json').is_file():
     raise SystemExit('Configuration missing. Run bash setup.sh first.')
 CFG = json.loads((BASE / 'config.json').read_text(encoding='utf-8'))
@@ -49,7 +49,7 @@ def model_id(path):
 for key in ('llama_bin', 'asr_bin', 'model', 'asr_model'):
     if CFG.get(key):
         CFG[key] = str(local_path(CFG[key]))
-ASR_ROOT = local_path(CFG.get('asr_root', 'backends/CrispASR'))
+ASR_ROOT = local_path(CFG.get('asr_root', 'internal/backends/CrispASR'))
 CFG['ffmpeg_bin'] = shutil.which('ffmpeg') or ''
 CFG['shutdown_bin'] = shutil.which('shutdown') or ''
 if CFG.get('allow_systemctl') is None:
@@ -201,7 +201,7 @@ def start_backend(kind, model_id):
                 command += ['--backend', 'parakeet']
             cwd = ASR_ROOT
         if not binary.is_file() or not os.access(binary, os.X_OK):
-            raise RuntimeError(f'{kind.upper()} executable not found: {binary}. Run bash scripts/build-backends.sh.')
+            raise RuntimeError(f'{kind.upper()} executable not found: {binary}. Run bash internal/scripts/build-backends.sh.')
         logpath = BASE / f'{kind}.log'
         environment = dict(os.environ)
         with logpath.open('ab', buffering=0) as handle:
@@ -221,9 +221,9 @@ def wait_ready(kind, model, jid):
             return
         proc = PROCESSES[kind]
         if proc is not None and proc.poll() is not None:
-            raise RuntimeError(f'{kind.upper()} server exited. Check data/{kind}.log')
+            raise RuntimeError(f'{kind.upper()} server exited. Check internal/data/{kind}.log')
         time.sleep(1)
-    raise RuntimeError(f'{kind.upper()} server not ready. Check data/{kind}.log')
+    raise RuntimeError(f'{kind.upper()} server not ready. Check internal/data/{kind}.log')
 
 
 def token_count(text):
@@ -573,7 +573,7 @@ def convert_audio(path):
     ffmpeg = CFG.get('ffmpeg_bin')
     if not ffmpeg:
         if path.suffix.lower() in {'.mp4', '.mov', '.webm', '.mkv'}:
-            raise RuntimeError('FFmpeg is required to extract audio from videos. Run bash scripts/dependencies.sh --install.')
+            raise RuntimeError('FFmpeg is required to extract audio from videos. Run bash internal/scripts/dependencies.sh --install.')
         return path
     converted = path.with_name(path.stem + '-16k.wav')
     cmd = [ffmpeg, '-nostdin', '-loglevel', 'error', '-y', '-i', str(path),
@@ -691,7 +691,7 @@ def background_worker():
 
 
 def recover_jobs():
-    # Requeue unfinished jobs when web-start.sh restarts the app.
+    # Requeue unfinished jobs when start.sh restarts the app.
     for metadata in sorted(JOBS.glob('*.json')):
         jid = metadata.stem
         if not re.fullmatch(r'[a-f0-9]{32}', jid):

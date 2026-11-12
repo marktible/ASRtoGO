@@ -1,6 +1,7 @@
-/data/
-/backends/*
-!/backends/README.md
+/internal/data/
+/internal/backends/*
+!/internal/backends/README.md
+/internal/dist/
 /models/translation/*
 !/models/translation/README.md
 /models/asr/*
@@ -8,8 +9,10 @@
 /.service.lock
 __pycache__/
 *.py[cod]
-/dist/
 # Previous installations
+/data/
+/backends/
+/dist/
 /.plamo-web/
 /llama.cpp/
 /*.gguf

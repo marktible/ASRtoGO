@@ -80,6 +80,6 @@ if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
   case "${1:---check}" in
     --check) check_dependencies ;;
     --install) install_dependencies ;;
-    *) echo 'Usage: bash scripts/dependencies.sh [--check|--install]' >&2; exit 2 ;;
+    *) echo 'Usage: bash internal/scripts/dependencies.sh [--check|--install]' >&2; exit 2 ;;
   esac
 fi

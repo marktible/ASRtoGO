@@ -5,7 +5,7 @@ Phone / desktop browser ──HTTP :8765──> Local AI Studio Python
        (password)                        │
                                          ├── HTML/CSS/JS, UI and auth
                                          ├── queued background jobs
-                                         ├── data/jobs/ durable files
+                                         ├── internal/data/jobs/ durable files
                                          ├── GET /api/preview/:id (text)
                                          ├── GET /api/audio/:id (Range / audio)
                                          │

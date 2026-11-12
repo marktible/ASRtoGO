@@ -10,8 +10,8 @@ import secrets
 import shutil
 import sys
 
-ROOT = Path(__file__).resolve().parent.parent
-DATA = ROOT / 'data'
+ROOT = Path(__file__).resolve().parents[2]
+DATA = ROOT / 'internal/data'
 
 
 def save_json(path, value):
@@ -28,27 +28,48 @@ def portable(path):
         return ''
     path = Path(path)
     try:
-        return str(path.relative_to(ROOT))
+        path = path.relative_to(ROOT)
     except ValueError:
-        return str(path)
+        pass
+    if not path.is_absolute() and path.parts and path.parts[0] == 'backends':
+        path = Path('internal') / path
+    elif not path.is_absolute() and path.parts and path.parts[0] == 'llama.cpp':
+        path = Path('internal/backends') / path
+    return str(path)
 
 
 def migrate():
-    old = ROOT / '.plamo-web'
-    if old.is_dir() and DATA.exists():
-        raise SystemExit('Both .plamo-web/ and data/ exist. Move the legacy installation aside or merge your data manually before setup.')
-    if old.is_dir():
-        old.rename(DATA)
+    old_data = [path for path in (ROOT / 'data', ROOT / '.plamo-web') if path.is_dir()]
+    if len(old_data) + int(DATA.exists()) > 1:
+        raise SystemExit('Multiple runtime folders exist. Back up and merge data/ or .plamo-web/ with internal/data/ before setup.')
+    if old_data:
+        old_data[0].rename(DATA)
     DATA.mkdir(mode=0o700, exist_ok=True)
     DATA.chmod(0o700)
     (DATA / 'jobs').mkdir(mode=0o700, exist_ok=True)
     (DATA / 'jobs').chmod(0o700)
-    for folder in ('models/translation', 'models/asr', 'backends'):
+    for folder in ('models/translation', 'models/asr', 'internal/backends'):
         (ROOT / folder).mkdir(parents=True, exist_ok=True)
-    legacy_backend = ROOT / 'llama.cpp'
-    backend = ROOT / 'backends/llama.cpp'
-    if legacy_backend.is_dir() and not backend.exists():
-        legacy_backend.rename(backend)
+    backends = ROOT / 'internal/backends'
+    old_backends = ROOT / 'backends'
+    sources = list(old_backends.iterdir()) if old_backends.is_dir() else []
+    if (ROOT / 'llama.cpp').is_dir():
+        sources.append(ROOT / 'llama.cpp')
+    targets = set()
+    for source in sources:
+        if source.name == 'README.md':
+            continue
+        destination = backends / source.name
+        if destination.exists() or destination in targets:
+            raise SystemExit(f'Cannot migrate backend: {destination} already exists. Resolve duplicate checkouts before setup.')
+        targets.add(destination)
+    for source in sources:
+        if source.name == 'README.md':
+            source.unlink()
+        else:
+            source.rename(backends / source.name)
+    if old_backends.is_dir():
+        old_backends.rmdir()
     config = DATA / 'config.json'
     cfg = json.loads(config.read_text()) if config.exists() else {}
     moves = {}
@@ -88,11 +109,8 @@ def migrate():
         changed = False
         for key in ('llm_model', 'asr_model'):
             value = params.get(key)
-            if value and str(value) in moves:
-                params[key] = portable(moves[str(value)])
-                changed = True
-            elif value and Path(value).is_absolute():
-                replacement = portable(value)
+            if value:
+                replacement = portable(moves.get(str(value), value))
                 if replacement != value:
                     params[key] = replacement
                     changed = True
@@ -100,11 +118,11 @@ def migrate():
             save_json(metadata, record)
     if cfg:
         save_json(config, cfg)
-    # Deployed sources have been extracted to app/ and docs/ before migration.
+    # Deployed sources now live under internal/app/ and internal/docs/.
     for name in ('app.py', 'index.html', 'script.js', 'style.css', 'README.md', 'DEVELOPMENT.md'):
-        if (ROOT / 'app/app.py').is_file():
+        if (ROOT / 'internal/app/app.py').is_file():
             (DATA / name).unlink(missing_ok=True)
-    if (DATA / 'docs').is_dir() and (ROOT / 'docs/API.md').is_file():
+    if (DATA / 'docs').is_dir() and (ROOT / 'internal/docs/API.md').is_file():
         shutil.rmtree(DATA / 'docs')
     return cfg
 
@@ -127,9 +145,9 @@ def configure():
         cfg['password_salt'] = salt.hex()
         cfg['password_hash'] = hashlib.pbkdf2_hmac('sha256', password.encode(), salt, 250000).hex()
     cfg.pop('root', None)
-    cfg.update({'llama_bin': 'backends/llama.cpp/build-studio/bin/llama-server',
-                'asr_bin': 'backends/CrispASR/build-studio/bin/crispasr',
-                'asr_root': 'backends/CrispASR'})
+    cfg.update({'llama_bin': 'internal/backends/llama.cpp/build-studio/bin/llama-server',
+                'asr_bin': 'internal/backends/CrispASR/build-studio/bin/crispasr',
+                'asr_root': 'internal/backends/CrispASR'})
     for key in ('ffmpeg_bin', 'shutdown_bin'):
         cfg.pop(key, None)
     for key, value in (('web_port', 8765), ('backend_port', 8080), ('asr_port', 8178),

@@ -409,8 +409,8 @@ function bindMenu() {
   }
   $('stop-web').onclick = async () => {
     visible('dropdown',false);
-    if (!confirm('Stop the website? You can restart it later by running bash web-start.sh on your PC.')) return;
-    try {await api('/api/stopweb','POST'); fail('Website stopped. Restart it with bash web-start.sh on your PC.');}
+    if (!confirm('Stop the website? You can restart it later by running bash start.sh on your PC.')) return;
+    try {await api('/api/stopweb','POST'); fail('Website stopped. Restart it with bash start.sh on your PC.');}
     catch(e){fail(e.message);}
   };
   $('logout').onclick = async () => {visible('dropdown',false);try{await api('/api/logout','POST');}catch(_){ } setLogin(false);};

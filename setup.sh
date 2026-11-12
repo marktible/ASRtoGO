@@ -17,19 +17,19 @@ for arg in "$@"; do
   esac
 done
 trap 'echo "Setup failed. The setup script is retained; fix the error above and rerun it." >&2' ERR
-source "$ROOT/scripts/dependencies.sh"
+source "$ROOT/internal/scripts/dependencies.sh"
 if ! check_dependencies; then
   if "$INSTALL_DEPS"; then install_dependencies; else exit 1; fi
 fi
 echo 'Checking that a Vulkan device is available...'
-python3 "$ROOT/scripts/check-vulkan.py"
+python3 "$ROOT/internal/scripts/check-vulkan.py"
 mkdir -p "$ROOT/models/translation" "$ROOT/models/asr"
-bash "$ROOT/web-stop.sh"
-python3 "$ROOT/scripts/configure.py" --migrate-only
-bash "$ROOT/scripts/build-backends.sh"
-python3 "$ROOT/scripts/configure.py"
-python3 -m py_compile "$ROOT/app/app.py"
-if "$START"; then bash "$ROOT/web-start.sh"; fi
+bash "$ROOT/stop.sh"
+python3 "$ROOT/internal/scripts/configure.py" --migrate-only
+bash "$ROOT/internal/scripts/build-backends.sh"
+python3 "$ROOT/internal/scripts/configure.py"
+python3 -m py_compile "$ROOT/internal/app/app.py"
+if "$START"; then bash "$ROOT/start.sh"; fi
 echo 'Setup complete. Add your own models to models/translation/ and models/asr/.'
-echo 'Use web-start.sh and web-stop.sh. To rebuild on another machine: bash scripts/build-backends.sh'
+echo 'Use start.sh and stop.sh. To rebuild on another machine: bash internal/scripts/build-backends.sh'
 rm -- "$SELF"

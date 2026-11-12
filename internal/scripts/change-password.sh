@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Change the Local AI Studio web password.
-# Place beside web-start.sh / web-stop.sh, then run: bash change-web-password.sh
+# Usage: bash internal/scripts/change-password.sh
 set -euo pipefail
 umask 077
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-APP="$ROOT/data"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+APP="$ROOT/internal/data"
 CONFIG="$APP/config.json"
 
 if [[ ! -f "$CONFIG" ]]; then
@@ -54,8 +54,8 @@ PY
 if [[ -f "$APP/web.pid" ]] && kill -0 "$(cat "$APP/web.pid")" 2>/dev/null; then
   echo 'Restarting web interface to apply the new password...'
   old_pid="$(cat "$APP/web.pid")"
-  if [[ -f "$ROOT/web-stop.sh" ]]; then
-    bash "$ROOT/web-stop.sh"
+  if [[ -f "$ROOT/stop.sh" ]]; then
+    bash "$ROOT/stop.sh"
   else
     echo 'Please restart the running web server manually.' >&2
     exit 0
@@ -64,11 +64,11 @@ if [[ -f "$APP/web.pid" ]] && kill -0 "$(cat "$APP/web.pid")" 2>/dev/null; then
     if ! kill -0 "$old_pid" 2>/dev/null; then break; fi
     sleep 0.1
   done
-  if [[ -f "$ROOT/web-start.sh" ]]; then
-    bash "$ROOT/web-start.sh"
+  if [[ -f "$ROOT/start.sh" ]]; then
+    bash "$ROOT/start.sh"
   else
     echo 'Restart the web server manually to apply the new password.'
   fi
 else
-  echo 'Start the web interface with: bash web-start.sh'
+  echo 'Start the web interface with: bash start.sh'
 fi
