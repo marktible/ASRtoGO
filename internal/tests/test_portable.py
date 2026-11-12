@@ -1,15 +1,20 @@
 """Integration regressions for setup, migration and relocation (no downloads/GPU)."""
 import importlib.util
 import http.client
+import hashlib
 import json
 import os
+import pty
 from pathlib import Path
 import shutil
+import select
+import signal
 import socket
 import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import unittest
 from unittest.mock import Mock, patch
 
@@ -64,8 +69,12 @@ class PortableTests(unittest.TestCase):
                             ignore=shutil.ignore_patterns('__pycache__', '*.gguf', '*.bin'))
         (self.root / 'internal/backends').mkdir()
         shutil.copy2(SOURCE / 'internal/backends/README.md', self.root / 'internal/backends/README.md')
-        for name in ('setup.sh', 'start.sh', 'stop.sh', 'README.md', 'LICENSE', '.gitignore'):
-            shutil.copy2(SOURCE / name, self.root / name)
+        for name in ('setup.sh', 'start.sh', 'stop.sh', 'settings.sh', 'README.md', 'LICENSE', '.gitignore'):
+            if name == 'setup.sh' and not (SOURCE / name).exists():
+                content = subprocess.check_output(['git', '-C', str(SOURCE), 'show', 'HEAD:setup.sh'])
+                (self.root / name).write_bytes(content)
+            else:
+                shutil.copy2(SOURCE / name, self.root / name)
         (self.root / 'internal/data/jobs').mkdir(parents=True)
         self.config = {'password_hash': 'existing hash', 'password_salt': 'existing salt',
                        'web_port': 9876, 'context_tokens': 16384, 'custom_setting': 'preserve me'}
@@ -99,6 +108,103 @@ class PortableTests(unittest.TestCase):
         self.assertEqual(process.returncode, 0, process.stderr)
         return load_module('studio_test_app', self.root / 'internal/app/app.py')
 
+    def settings_menu(self, replies):
+        pid, terminal = pty.fork()
+        if pid == 0:
+            os.chdir(self.base)
+            os.execvp('bash', ['bash', str(self.root / 'settings.sh')])
+        output = b''
+        cursor = 0
+        pending = iter(replies)
+        reply = next(pending, None)
+        deadline = time.monotonic() + 30
+        status = None
+        try:
+            while time.monotonic() < deadline:
+                if select.select([terminal], [], [], 0.1)[0]:
+                    try:
+                        data = os.read(terminal, 65536)
+                    except OSError:
+                        break
+                    if not data:
+                        break
+                    output += data
+                if reply is not None:
+                    prompt, value = reply
+                    position = output.find(prompt.encode(), cursor)
+                    if position >= 0:
+                        cursor = position + len(prompt)
+                        os.write(terminal, (value + '\n').encode())
+                        reply = next(pending, None)
+                finished, status = os.waitpid(pid, os.WNOHANG)
+                if finished:
+                    break
+                status = None
+            if status is None:
+                finished, result = os.waitpid(pid, os.WNOHANG)
+                if finished:
+                    status = result
+            self.assertIsNotNone(status, output.decode(errors='replace'))
+            self.assertEqual(os.waitstatus_to_exitcode(status), 0, output.decode(errors='replace'))
+            self.assertIsNone(reply, output.decode(errors='replace'))
+            return output.decode(errors='replace')
+        finally:
+            os.close(terminal)
+            if status is None:
+                os.kill(pid, signal.SIGKILL)
+                os.waitpid(pid, 0)
+
+    def test_settings_exit_and_invalid_option_preserve_config(self):
+        before = (self.root / 'internal/data/config.json').read_bytes()
+        output = self.settings_menu([('Select an option: ', 'invalid'), ('Select an option: ', '0')])
+        self.assertIn('Choose one of the listed options.', output)
+        self.assertEqual((self.root / 'internal/data/config.json').read_bytes(), before)
+
+    def test_settings_changes_password_privately_and_restarts_owned_web(self):
+        with socket.socket() as probe:
+            probe.bind(('127.0.0.1', 0))
+            port = probe.getsockname()[1]
+        old_password = 'Old-test-passphrase-42!'
+        new_password = 'New-test-passphrase-73!'
+        salt = bytes.fromhex('12345678901234567890123456789012')
+        self.config.update(web_port=port, password_salt=salt.hex(),
+                           password_hash=hashlib.pbkdf2_hmac('sha256', old_password.encode(), salt, 250000).hex())
+        self.write_config(self.config)
+        self.configured_app()
+
+        def login(password):
+            connection = http.client.HTTPConnection('127.0.0.1', port, timeout=5)
+            try:
+                body = json.dumps({'password': password})
+                connection.request('POST', '/api/login', body, {'Content-Type': 'application/json'})
+                response = connection.getresponse()
+                response.read()
+                return response.status
+            finally:
+                connection.close()
+
+        try:
+            self.run_script('start.sh')
+            original_pid = (self.root / 'internal/data/web.pid').read_text()
+            self.assertEqual(login(old_password), 200)
+            output = self.settings_menu([('Select an option: ', '1'), ('New password: ', 'short'),
+                ('New password: ', new_password), ('Repeat password: ', 'mismatch'),
+                ('New password: ', new_password), ('Repeat password: ', new_password),
+                ('Select an option: ', '0')])
+            self.assertNotIn(new_password, output)
+            self.assertIn('Passwords did not match.', output)
+            self.assertIn('Password updated.', output)
+            self.assertNotEqual((self.root / 'internal/data/web.pid').read_text(), original_pid)
+            self.assertEqual(login(new_password), 200)
+            self.assertEqual(login(old_password), 401)
+            config_path = self.root / 'internal/data/config.json'
+            cfg = json.loads(config_path.read_text())
+            self.assertEqual(cfg['custom_setting'], self.config['custom_setting'])
+            self.assertEqual(cfg['web_port'], port)
+            self.assertEqual(config_path.stat().st_mode & 0o777, 0o600)
+        finally:
+            self.run_script('stop.sh')
+
     def test_setup_empty_models_builds_vulkan_preserves_settings_and_deletes_itself(self):
         self.run_script('setup.sh', '--no-start', BUILD_JOBS='2')
         self.assertFalse((self.root / 'setup.sh').exists())
@@ -122,7 +228,7 @@ class PortableTests(unittest.TestCase):
         self.assertEqual({call[-1] for call in builds}, {'llama-server', 'crispasr'})
         self.assertTrue(all(call[call.index('--parallel') + 1] == '2' for call in builds))
         visible = {path.name for path in self.root.iterdir() if not path.name.startswith('.')}
-        self.assertEqual(visible, {'README.md', 'LICENSE', 'start.sh', 'stop.sh', 'models', 'internal'})
+        self.assertEqual(visible, {'README.md', 'LICENSE', 'start.sh', 'stop.sh', 'settings.sh', 'models', 'internal'})
 
     def test_build_failure_retains_setup_and_credentials(self):
         result = self.run_script('setup.sh', '--no-start', success=False, FAIL_TOOL='cmake')
@@ -266,10 +372,11 @@ class PortableTests(unittest.TestCase):
         self.assertIn('ASRtoGO/setup.sh', names)
         self.assertIn('ASRtoGO/LICENSE', names)
         self.assertIn('ASRtoGO/start.sh', names)
+        self.assertIn('ASRtoGO/settings.sh', names)
         self.assertIn('ASRtoGO/internal/scripts/service.py', names)
         self.assertIn('ASRtoGO/models/asr/README.md', names)
         visible = {Path(name).parts[1] for name in names if not Path(name).parts[1].startswith('.')}
-        self.assertEqual(visible, {'README.md', 'LICENSE', 'setup.sh', 'start.sh', 'stop.sh', 'models', 'internal'})
+        self.assertEqual(visible, {'README.md', 'LICENSE', 'setup.sh', 'start.sh', 'stop.sh', 'settings.sh', 'models', 'internal'})
         self.assertFalse(any('/data/' in name or name.endswith('.gguf') for name in names))
 
     def test_start_upgrades_previous_layout_without_reinstalling(self):

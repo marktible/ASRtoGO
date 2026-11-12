@@ -67,7 +67,7 @@ and [CrispASR documentation](https://github.com/CrispStrobe/CrispASR) for backen
 ```bash
 bash start.sh
 bash stop.sh
-bash internal/scripts/change-password.sh
+bash settings.sh
 ```
 
 The start script prints localhost and available LAN addresses. Web port defaults
@@ -92,6 +92,7 @@ translation and ASR do not depend on shutdown permissions.
 ASRtoGO/
 ├── setup.sh                 # removed after successful setup
 ├── start.sh / stop.sh
+├── settings.sh              # password changes and future settings
 ├── models/
 │   ├── translation/
 │   └── asr/

@@ -41,6 +41,15 @@ bash stop.sh
 The start script prints the address to open on your PC or phone. Use it on a
 trusted LAN/private connection; do not expose it to the public internet.
 
+## Settings
+
+```bash
+bash settings.sh
+```
+
+Choose **Change web password** to set a new password. The web app restarts to
+apply it when running. Future settings will appear in this menu.
+
 Everything else lives in **`internal/`**. Keep this folder with the app: it
 contains the code, backend builds, settings, and saved jobs. Older settings and
 jobs are preserved when upgrading.

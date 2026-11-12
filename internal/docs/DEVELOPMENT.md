@@ -1,6 +1,6 @@
 # Development
 
-Keep the root focused on setup, start/stop, and models. All implementation and
+Keep the root focused on setup, start/stop, settings, and models. All implementation and
 maintenance files live under `internal/`:
 
 - `app/`: Python HTTP server and browser HTML/CSS/JS.
@@ -14,13 +14,16 @@ Project paths and internal model IDs are relative to the repository root.
 Setup and start recognize older root-level `data/`, `.plamo-web/`, and backend
 folders. Migration preserves credentials/jobs and refuses ambiguous merges.
 The web app owns the model servers; standalone inference launchers are omitted.
+`settings.sh` opens `internal/scripts/settings.py`. Add future menu entries to
+its `ACTIONS` mapping. Password changes preserve other settings and restart only
+this project's running web app.
 
 Run from the repository root:
 
 ```bash
 python3 -m unittest discover -s internal/tests -v
 python3 -m compileall -q internal/app internal/scripts internal/tools internal/tests
-bash -n setup.sh start.sh stop.sh internal/scripts/*.sh
+bash -n setup.sh start.sh stop.sh settings.sh internal/scripts/*.sh
 ```
 
 Tests exercise setup success/failure, Vulkan/native build options, dependency
