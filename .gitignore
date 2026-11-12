@@ -1,0 +1,15 @@
+/data/
+/backends/*
+!/backends/README.md
+/models/translation/*
+!/models/translation/README.md
+/models/asr/*
+!/models/asr/README.md
+/.service.lock
+__pycache__/
+*.py[cod]
+/dist/
+# Previous installations
+/.plamo-web/
+/llama.cpp/
+/*.gguf
