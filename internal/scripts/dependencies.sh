@@ -6,15 +6,30 @@ dependency_command() {
   local ID=${1:-unknown} ID_LIKE=${2:-}
   if (($# == 0)) && [[ -r /etc/os-release ]]; then source /etc/os-release; fi
   case " $ID $ID_LIKE " in
-    *' void '*) INSTALL=(xbps-install -Sy base-devel git cmake ninja pkg-config python3 ffmpeg Vulkan-Headers vulkan-loader-devel vulkan-tools shaderc) ;;
-    *' debian '*|*' ubuntu '*) INSTALL=(apt-get install -y build-essential git cmake ninja-build pkg-config python3 ffmpeg libvulkan-dev vulkan-tools glslc) ;;
-    *' fedora '*|*' rhel '*|*' centos '*) INSTALL=(dnf install -y gcc gcc-c++ make git cmake ninja-build pkgconf-pkg-config python3 ffmpeg-free vulkan-loader-devel vulkan-headers vulkan-tools glslc) ;;
-    *' arch '*|*' manjaro '*) INSTALL=(pacman -S --needed base-devel git cmake ninja pkgconf python ffmpeg vulkan-headers vulkan-icd-loader vulkan-tools shaderc) ;;
-    *' opensuse '*|*' opensuse-leap '*|*' opensuse-tumbleweed '*|*' suse '*) INSTALL=(zypper install -y gcc gcc-c++ make git cmake ninja pkg-config python3 ffmpeg vulkan-devel vulkan-tools shaderc) ;;
-    *' alpine '*) INSTALL=(apk add build-base git cmake ninja pkgconf python3 ffmpeg vulkan-headers vulkan-loader-dev vulkan-tools shaderc) ;;
+    *' void '*) INSTALL=(xbps-install -Sy base-devel git cmake ninja pkg-config python3 ffmpeg Vulkan-Headers vulkan-loader-devel vulkan-tools shaderc SPIRV-Headers) ;;
+    *' debian '*|*' ubuntu '*) INSTALL=(apt-get install -y build-essential git cmake ninja-build pkg-config python3 ffmpeg libvulkan-dev vulkan-tools glslc spirv-headers) ;;
+    *' fedora '*|*' rhel '*|*' centos '*) INSTALL=(dnf install -y gcc gcc-c++ make git cmake ninja-build pkgconf-pkg-config python3 ffmpeg-free vulkan-loader-devel vulkan-headers vulkan-tools glslc spirv-headers-devel) ;;
+    *' arch '*|*' manjaro '*) INSTALL=(pacman -S --needed base-devel git cmake ninja pkgconf python ffmpeg vulkan-headers vulkan-icd-loader vulkan-tools shaderc spirv-headers) ;;
+    *' opensuse '*|*' opensuse-leap '*|*' opensuse-tumbleweed '*|*' suse '*) INSTALL=(zypper install -y gcc gcc-c++ make git cmake ninja pkg-config python3 ffmpeg vulkan-devel vulkan-tools shaderc spirv-headers) ;;
+    *' alpine '*) INSTALL=(apk add build-base git cmake ninja pkgconf python3 ffmpeg vulkan-headers vulkan-loader-dev vulkan-tools shaderc spirv-headers) ;;
     *) INSTALL=() ;;
   esac
 }
+
+check_spirv_headers() (
+  local probe
+  probe=$(mktemp -d) || return 1
+  trap 'rm -rf -- "$probe"' EXIT
+  cat > "$probe/CMakeLists.txt" <<'CMAKE'
+cmake_minimum_required(VERSION 3.24)
+project(ASRtoGOSpirvHeadersCheck LANGUAGES NONE)
+if (DEFINED ENV{VULKAN_SDK})
+  list(APPEND CMAKE_PREFIX_PATH "$ENV{VULKAN_SDK}")
+endif()
+find_package(SPIRV-Headers CONFIG REQUIRED)
+CMAKE
+  cmake -S "$probe" -B "$probe/build" >/dev/null 2>&1
+)
 
 check_dependencies() {
   local missing=() tool
@@ -40,6 +55,9 @@ check_dependencies() {
   if ! pkg-config --exists vulkan 2>/dev/null; then
     missing+=('Vulkan development headers/loader (pkg-config vulkan)')
   fi
+  if command -v cmake >/dev/null 2>&1 && ! check_spirv_headers; then
+    missing+=('SPIRV-Headers development package (SPIRV-HeadersConfig.cmake)')
+  fi
   if ((${#missing[@]})); then
     printf 'Missing dependencies:\n' >&2
     printf '  %s\n' "${missing[@]}" >&2
@@ -52,6 +70,7 @@ check_dependencies() {
     else
       echo 'Install the tools listed above using your distribution package manager.' >&2
     fi
+    echo 'For a custom SPIRV-Headers installation, export CMAKE_PREFIX_PATH or VULKAN_SDK to its installation prefix.' >&2
     echo 'A Vulkan driver for your GPU must also be installed; setup does not choose or replace GPU drivers.' >&2
     return 1
   fi

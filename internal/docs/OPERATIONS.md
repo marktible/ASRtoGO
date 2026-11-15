@@ -41,10 +41,18 @@ Linux distributions can install the reported tools manually. Alpine/minimal
 images need Bash installed before running the scripts.
 
 Required: Bash, Python >= 3.10, CMake >= 3.24, C/C++ compiler and make, Git,
-pkg-config, FFmpeg, Vulkan headers/loader, glslc, vulkaninfo, and a Vulkan driver
+pkg-config, FFmpeg, Vulkan headers/loader, SPIRV-Headers (including its CMake
+package configuration), glslc, vulkaninfo, and a Vulkan driver
 for your GPU. Ninja and ccache are used when available. Setup does not change GPU
 drivers. `vulkaninfo --summary` must report a GPU; software-only Vulkan devices
 are rejected. No display server is required for the app.
+
+If a backend reports that `SPIRV-HeadersConfig.cmake` is missing, rerun
+`bash setup.sh --install-deps`. The dependency check now catches this before
+building either backend. The package is `spirv-headers` on Arch/CachyOS,
+Debian/Ubuntu, openSUSE, and Alpine; `spirv-headers-devel` on Fedora; and
+`SPIRV-Headers` on Void. A custom installation or Vulkan SDK can be found by
+exporting `CMAKE_PREFIX_PATH` or `VULKAN_SDK` to its installation prefix.
 
 ## Add your own models
 

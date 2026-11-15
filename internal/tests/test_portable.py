@@ -33,10 +33,16 @@ if name == 'cmake':
     if args == ['--version']:
         print('cmake version 3.31.0')
     elif '-B' in args:
+        source = pathlib.Path(args[args.index('-S') + 1])
+        if os.environ.get('FAIL_SPIRV_HEADERS') and 'find_package(SPIRV-Headers' in (source / 'CMakeLists.txt').read_text():
+            sys.exit(1)
         build = pathlib.Path(args[args.index('-B') + 1])
         build.mkdir(parents=True, exist_ok=True)
         (build / 'CMakeCache.txt').write_text('test cache')
     elif '--build' in args:
+        if os.environ.get('FAIL_BUILD'):
+            print('Intentional backend build failure', file=sys.stderr)
+            sys.exit(1)
         build = pathlib.Path(args[args.index('--build') + 1])
         target = args[args.index('--target') + 1]
         binary = build / 'bin' / target
@@ -219,7 +225,7 @@ class PortableTests(unittest.TestCase):
         clones = [call for call in calls if call[:2] == ['git', 'clone']]
         self.assertEqual(len(clones), 2)
         self.assertTrue(all('--recurse-submodules' in call for call in clones))
-        configurations = [call for call in calls if '-B' in call]
+        configurations = [call for call in calls if '-DGGML_VULKAN=ON' in call]
         self.assertEqual(len(configurations), 2)
         for call in configurations:
             for flag in ('-DCMAKE_BUILD_TYPE=Release', '-DGGML_NATIVE=ON', '-DGGML_VULKAN=ON', '-DGGML_LTO=ON', '-DCMAKE_BUILD_RPATH_USE_ORIGIN=ON'):
@@ -231,7 +237,7 @@ class PortableTests(unittest.TestCase):
         self.assertEqual(visible, {'README.md', 'LICENSE', 'start.sh', 'stop.sh', 'settings.sh', 'models', 'internal'})
 
     def test_build_failure_retains_setup_and_credentials(self):
-        result = self.run_script('setup.sh', '--no-start', success=False, FAIL_TOOL='cmake')
+        result = self.run_script('setup.sh', '--no-start', success=False, FAIL_BUILD='1')
         self.assertTrue((self.root / 'setup.sh').exists())
         self.assertIn('retained', result.stderr)
         self.assertEqual(json.loads((self.root / 'internal/data/config.json').read_text()), self.config)
@@ -241,6 +247,40 @@ class PortableTests(unittest.TestCase):
         self.assertIn('Vulkan development', result.stderr)
         self.assertTrue((self.root / 'setup.sh').exists())
         self.assertFalse(any(call[0] == 'git' for call in self.tool_calls()))
+
+    def test_missing_spirv_headers_precedes_clone_and_retains_setup(self):
+        result = self.run_script('setup.sh', '--no-start', success=False, FAIL_SPIRV_HEADERS='1')
+        self.assertIn('SPIRV-HeadersConfig.cmake', result.stderr)
+        self.assertIn('spirv-headers', result.stderr)
+        self.assertTrue((self.root / 'setup.sh').exists())
+        self.assertFalse(any(call[0] == 'git' for call in self.tool_calls()))
+        self.assertFalse(any('--build' in call for call in self.tool_calls()))
+
+    def test_spirv_headers_probe_finds_custom_cmake_and_sdk_prefixes(self):
+        cmake = shutil.which('cmake')
+        if cmake is None:
+            self.skipTest('CMake is unavailable')
+        (self.bin / 'cmake').unlink()
+        (self.bin / 'cmake').symlink_to(cmake)
+        prefix = self.base / 'custom SDK with spaces'
+        config = prefix / 'share/cmake/SPIRV-Headers/SPIRV-HeadersConfig.cmake'
+        config.parent.mkdir(parents=True)
+        command = ['bash', '-c', 'source "$1"; check_spirv_headers',
+                   'test', str(self.root / 'internal/scripts/dependencies.sh')]
+        for variable in ('CMAKE_PREFIX_PATH', 'VULKAN_SDK'):
+            with self.subTest(variable=variable):
+                probe_dir = self.base / variable
+                probe_dir.mkdir()
+                env = dict(self.env, CMAKE_PREFIX_PATH='', VULKAN_SDK='', TMPDIR=str(probe_dir))
+                env[variable] = str(prefix)
+                # Prove this fixture is used even on hosts with system headers.
+                config.write_text('message(FATAL_ERROR "Found fixture")\n')
+                failed = subprocess.run(command, env=env, capture_output=True, text=True)
+                self.assertNotEqual(failed.returncode, 0)
+                config.write_text('add_library(SPIRV-Headers::SPIRV-Headers INTERFACE IMPORTED)\n')
+                result = subprocess.run(command, env=env, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(list(probe_dir.iterdir()), [])
 
     def test_gpu_failure_retains_setup_and_precedes_clone(self):
         self.run_script('setup.sh', '--no-start', success=False, FAIL_TOOL='vulkaninfo')
@@ -322,13 +362,21 @@ class PortableTests(unittest.TestCase):
             self.assertEqual(run.call_args.args[0], ['systemctl', '--no-ask-password', 'poweroff'])
 
     def test_package_mappings_for_distro_families(self):
-        for distro, family, manager in (('void', '', 'xbps-install'), ('ubuntu', 'debian', 'apt-get'),
-                ('linuxmint', 'ubuntu debian', 'apt-get'), ('fedora', '', 'dnf'), ('arch', '', 'pacman'),
-                ('opensuse-tumbleweed', 'suse', 'zypper'), ('alpine', '', 'apk')):
-            command = ['bash', '-c', 'source "$1"; dependency_command "$2" "$3"; printf "%s" "${INSTALL[0]}"',
+        for distro, family, manager, headers in (
+                ('void', '', 'xbps-install', 'SPIRV-Headers'),
+                ('ubuntu', 'debian', 'apt-get', 'spirv-headers'),
+                ('linuxmint', 'ubuntu debian', 'apt-get', 'spirv-headers'),
+                ('fedora', '', 'dnf', 'spirv-headers-devel'),
+                ('arch', '', 'pacman', 'spirv-headers'),
+                ('cachyos', 'arch', 'pacman', 'spirv-headers'),
+                ('opensuse-tumbleweed', 'suse', 'zypper', 'spirv-headers'),
+                ('alpine', '', 'apk', 'spirv-headers')):
+            command = ['bash', '-c', 'source "$1"; dependency_command "$2" "$3"; printf "%s\\n" "${INSTALL[@]}"',
                        'test', str(self.root / 'internal/scripts/dependencies.sh'), distro, family]
             result = subprocess.run(command, capture_output=True, text=True, check=True)
-            self.assertEqual(result.stdout, manager)
+            packages = result.stdout.splitlines()
+            self.assertEqual(packages[0], manager)
+            self.assertIn(headers, packages)
 
     def test_service_rejects_occupied_port_then_starts_and_stops(self):
         try:
