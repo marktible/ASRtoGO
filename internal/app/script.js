@@ -4,6 +4,24 @@ let viewedJob = null, viewedKind = 'result';
 let csrf = '', activeJob = null, selectedTab = 'translate', textMode = 'text', chosenText = null, asrFile = null, comboFile = null, ticker = null, activeModels = {llm: [], asr: []}, serverState = {llm: 'offline', asr: 'offline'}, serverOwned = {llm: false, asr: false};
 const visible = (id, yes) => {$(id).hidden = !yes;};
 
+function readPreference(key) {
+  try { return localStorage.getItem('asrtogo.' + key); } catch (_) { return null; }
+}
+function savePreference(key, value) {
+  try { localStorage.setItem('asrtogo.' + key, value); } catch (_) {}
+}
+
+const systemDark = window.matchMedia('(prefers-color-scheme: dark)');
+let theme = readPreference('theme');
+if (theme !== 'light' && theme !== 'dark') theme = 'system';
+function applyTheme() {
+  const root = document.documentElement;
+  root.dataset.theme = theme === 'system' ? (systemDark.matches ? 'dark' : 'light') : theme;
+  document.querySelector('meta[name="theme-color"]').content = getComputedStyle(root).getPropertyValue('--canvas').trim();
+}
+applyTheme();
+systemDark.addEventListener('change', applyTheme);
+
 async function api(path, method = 'GET', data) {
   const headers = {};
   if (method !== 'GET') { headers['Content-Type'] = 'application/json'; headers['X-CSRF-Token'] = csrf; }
@@ -47,7 +65,7 @@ function setupDrop(zone, input, label) {
   });
 }
 function modelsSelect(id, records) {
-  const s = $(id), previous = s.value;
+  const s = $(id), previous = readPreference(id) || s.value;
   s.replaceChildren();
   if (!records.length) {
     s.append(new Option('Add a model to models/' + (id.includes('llm') ? 'translation/' : 'asr/') + ' and refresh Settings.', ''));
@@ -57,6 +75,7 @@ function modelsSelect(id, records) {
     s.append(new Option(`${entry.name} · ${Math.round(entry.size_mb)} MB`, entry.id));
   }
   if (records.some(r => r.id === previous)) s.value = previous;
+  s.onchange = () => savePreference(id, s.value);
 }
 async function loadModels() {
   const data = await api('/api/models');
@@ -453,18 +472,20 @@ function bindMenu() {
   };
 }
 async function initialize() {
+  $('theme').value = theme;
+  $('theme').onchange = () => {
+    theme = $('theme').value;
+    applyTheme();
+    savePreference('theme', theme);
+  };
   document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => setTab(b.dataset.tab));
   $('text-mode').onclick = () => setTextMode('text'); $('file-mode').onclick = () => setTextMode('file');
   setupDrop('text-drop','text-file','text-selected');
   setupDrop('audio-drop','asr-file','asr-selected');
   setupDrop('combo-drop','combo-file','combo-selected');
   const autoUnload = $('combo-auto-unload');
-  try {
-    autoUnload.checked = localStorage.getItem('asrtogo.autoUnload') === 'true';
-    autoUnload.onchange = () => {
-      try { localStorage.setItem('asrtogo.autoUnload', String(autoUnload.checked)); } catch (_) {}
-    };
-  } catch (_) {} // The checkbox also works when browser storage is unavailable.
+  autoUnload.checked = readPreference('autoUnload') === 'true';
+  autoUnload.onchange = () => savePreference('autoUnload', String(autoUnload.checked));
   $('source-text').oninput = () => {$('character-count').textContent = $('source-text').value.length.toLocaleString()+' characters';};
   $('swap-lang').onclick = () => swap('source-lang','target-lang');
   $('combo-swap').onclick = () => swap('combo-source','combo-target');
@@ -492,4 +513,4 @@ async function initialize() {
   catch(e){$('login-error').textContent=e.message;}
   setInterval(() => {if (csrf) {refreshStatus();refreshJobs();}},7000);
 }
-initialize();
+document.addEventListener('DOMContentLoaded', initialize);

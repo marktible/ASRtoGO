@@ -47,7 +47,10 @@ trusted LAN/private connection; do not expose it to the public internet.
 bash settings.sh
 ```
 
-In the web app, check **Settings → Models → Auto unload** to keep one model in
+In web **Settings → Theme**, choose **Light**, **Dark**, or **System default**.
+The browser remembers your theme and your selected speech and translation models.
+
+Check **Settings → Models → Auto unload** to keep one model in
 memory at a time during ASR + Translate. The browser remembers your choice for
 future combined jobs.
 
