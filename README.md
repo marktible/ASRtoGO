@@ -3,6 +3,12 @@
 Translate text, transcribe audio/video, and translate subtitles in a local web app.
 Runs on your Linux PC using llama.cpp and CrispASR with Vulkan.
 
+## Recommended models for Japanese to English
+
+Use **Haas-ja** to transcribe
+Japanese speech and **PLaMo 3 Translate** to translate the transcript into English.
+For Japanese text or subtitles, use PLaMo 3 Translate directly.
+
 ## 1. Set up
 
 Run from this folder as your regular user:
