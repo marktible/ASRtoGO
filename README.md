@@ -47,8 +47,9 @@ trusted LAN/private connection; do not expose it to the public internet.
 bash settings.sh
 ```
 
-In **ASR + Translate**, check **Auto unload** to keep one model in memory at a
-time. The studio remembers your choice in this browser and saves it with each job.
+In the web app, check **Settings → Models → Auto unload** to keep one model in
+memory at a time during ASR + Translate. The browser remembers your choice for
+future combined jobs.
 
 In the web app, **Settings → Update backends** updates and rebuilds llama.cpp
 and CrispASR. Start an update when the queue is idle. You can close the browser

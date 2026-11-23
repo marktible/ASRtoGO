@@ -59,7 +59,7 @@ select, textarea, input:not([type=file],[type=checkbox]) {
 .tiny-tab, .result-view { padding: 4px 12px; font-size: .8rem; }
 .tiny-tab.active, .result-view.active { background: var(--paper); color: var(--green); box-shadow: 0 1px 3px #243b2f22; }
 textarea { display: block; resize: vertical; min-height: 170px; line-height: 1.6; }
-.input-foot, .action-hint, .setting-note, .model-state, .jobs-tools, .jobs-empty, .preview-note, .job-sub, .audio-head span, .fold-name small {
+.input-foot, .setting-note, .model-state, .jobs-tools, .jobs-empty, .preview-note, .job-sub, .audio-head span, .fold-name small {
   color: var(--muted); font-size: .8rem;
 }
 .input-foot { text-align: right; margin-top: 4px; }
@@ -69,8 +69,6 @@ textarea { display: block; resize: vertical; min-height: 170px; line-height: 1.6
 .drop-zone:has(+ .file-input:focus-visible) { outline: 3px solid var(--green); outline-offset: 2px; }
 .selected-file { margin-top: 6px; color: var(--green); overflow-wrap: anywhere; font-size: .88rem; }
 .editor-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 12px; border-top: 1px solid var(--line); margin-top: 18px; padding: 16px 0; }
-.editor-actions > div { margin-right: auto; }
-.editor-actions label { cursor: pointer; font-weight: 600; font-size: .9rem; }
 input[type=checkbox] { accent-color: var(--green); }
 .primary-btn { background: var(--green); color: white; border-color: var(--green); padding: .6rem 1.25rem; }
 .primary-btn:hover { color: white; background: #124935; }

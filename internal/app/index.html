@@ -21,6 +21,8 @@
             <select id="settings-llm-model"></select><button type="button" id="toggle-llm">Start</button></div>
           <div class="model-row"><label for="settings-asr-model">Speech recognition</label><span class="model-state" id="asr-state-label"></span>
             <select id="settings-asr-model"></select><button type="button" id="toggle-asr">Start</button></div>
+          <label class="setting-line"><span>Auto unload</span><input type="checkbox" id="combo-auto-unload" aria-describedby="auto-unload-hint"></label>
+          <p class="setting-note" id="auto-unload-hint">ASR + Translate unloads one model before loading the next.</p>
           <div class="setting-line"><span>llama.cpp and CrispASR</span><button type="button" id="update-backends">Update backends</button></div>
           <p class="setting-note" id="update-status" role="status"></p>
         </section>
@@ -74,13 +76,7 @@
         <div class="langbar"><div class="lang-select"><label for="combo-source">SPOKEN LANGUAGE</label><select id="combo-source"><option value="ja">Japanese</option><option value="en">English</option></select></div><button type="button" id="combo-swap" class="swap-button" aria-label="Swap languages">⇄</button><div class="lang-select"><label for="combo-target">TRANSLATE TO</label><select id="combo-target"><option value="en">English</option><option value="ja">Japanese</option></select></div></div>
         <div class="format-row"><label for="combo-format">SAVE AS</label><select id="combo-format"><option value="srt">SRT subtitles</option><option value="vtt">VTT subtitles</option><option value="txt">Plain text</option></select></div>
         <label class="drop-zone" id="combo-drop" for="combo-file"><strong>Drop audio or video here</strong><span>or tap to choose a file · up to 100 MB</span></label><input id="combo-file" type="file" accept="audio/*,video/mp4,video/webm,.mkv,.mov" class="file-input"><div class="selected-file" id="combo-selected" hidden></div>
-        <div class="editor-actions">
-          <div>
-            <label><input type="checkbox" id="combo-auto-unload" aria-describedby="auto-unload-hint"> Auto unload</label>
-            <div class="action-hint" id="auto-unload-hint">Keep only the model needed for the current step in memory.</div>
-          </div>
-          <button type="button" id="combo-btn" class="primary-btn translate-btn">Transcribe &amp; translate</button>
-        </div>
+        <div class="editor-actions"><button type="button" id="combo-btn" class="primary-btn translate-btn">Transcribe &amp; translate</button></div>
       </section>
     </section>
 
