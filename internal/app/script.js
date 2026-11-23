@@ -22,10 +22,21 @@ function applyTheme() {
 applyTheme();
 systemDark.addEventListener('change', applyTheme);
 
+async function studioFetch(path, options) {
+  const sessionToken = csrf;
+  const response = await fetch(path, {credentials: 'same-origin', ...options});
+  if (response.status === 401 && path !== '/api/login' && sessionToken && csrf === sessionToken) {
+    setLogin(false);
+    $('login-error').textContent = 'Your session ended. Sign in again to continue.';
+    $('login-password').focus();
+  }
+  return response;
+}
+
 async function api(path, method = 'GET', data) {
   const headers = {};
   if (method !== 'GET') { headers['Content-Type'] = 'application/json'; headers['X-CSRF-Token'] = csrf; }
-  const response = await fetch(path, {method, headers, credentials: 'same-origin',
+  const response = await studioFetch(path, {method, headers,
      body: method !== 'GET' ? JSON.stringify(data || {}) : undefined});
   let json = {};
   try {json = await response.json();} catch (_) {}
@@ -109,11 +120,14 @@ async function refreshStatus() {
 function setLogin(yes, token='') {
   csrf = yes ? token : '';
   visible('login-panel',!yes); visible('workspace',yes); visible('authorized-actions',yes);
-  if (yes) {loadModels().catch(e=>fail(e.message)); refreshStatus(); refreshJobs();}
+  if (yes) {fail(''); loadModels().catch(e=>fail(e.message)); refreshStatus(); refreshJobs();}
   else {
+    $('dropdown').close();
+    closeShutdown();
     activeJob = null; clearInterval(ticker); ticker = null;
     $('result-audio').pause(); $('result-audio').removeAttribute('src'); $('result-audio').load();
     visible('result-section', false);
+    visible('progress-section', false);
   }
 }
 function startProgress(title) {
@@ -195,7 +209,7 @@ async function upload(mode) {
     $('progress-message').textContent = 'Uploading audio to your PC...';
     const query = new URLSearchParams({mode,format,source,target,language:lang,
                  asr_model:asrModel, ...(combo ? {llm_model:llmModel, auto_unload:$('combo-auto-unload').checked} : {})});
-    const response = await fetch('/api/upload?'+query, {method:'POST',credentials:'same-origin',
+    const response = await studioFetch('/api/upload?'+query, {method:'POST',
         headers:{'Content-Type':'application/octet-stream','X-Upload-Name':encodeURIComponent(file.name),
                  'X-CSRF-Token':csrf},body:file});
     const data = await response.json();
@@ -460,7 +474,7 @@ function bindMenu() {
     catch(e){fail(e.message);}
   };
   $('logout').onclick = async () => {dialog.close();try{await api('/api/logout','POST');}catch(_){ } setLogin(false);};
-  $('shutdown-open').onclick = () => {dialog.close();visible('shutdown-modal',true);$('confirm-text').focus();};
+  $('shutdown-open').onclick = () => {dialog.close();$('shutdown-error').textContent='';visible('shutdown-modal',true);$('confirm-text').focus();};
   $('cancel-shutdown').onclick = closeShutdown;
   $('modal-backdrop').onclick = closeShutdown;
   $('confirm-shutdown').onclick = async () => {
