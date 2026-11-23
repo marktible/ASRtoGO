@@ -69,6 +69,9 @@ use them. The terminal settings menu also supports offline updates.
 systemd PC. Save your work first. For headless use, launch the studio from SSH
 or a Linux text console before stopping the desktop. **Restore desktop** brings
 back the graphical login. Both actions are also available in `bash settings.sh`.
+If the web controls report that sudo needs a password, run `bash settings.sh`
+as your regular studio user and choose **4. Authorize web desktop controls**.
+Enter your Linux password in the terminal, then retry in the browser.
 
 Choose **Change web password** in the terminal menu to set a new password.
 

@@ -60,16 +60,24 @@ def desktop_state():
     return properties.get('ActiveState', 'unavailable')
 
 
-def set_desktop(action, interactive=False):
+def desktop_command(action):
     if action not in ('start', 'stop'):
         raise ValueError('Choose start or stop for the graphical desktop.')
+    for systemctl in ('/usr/bin/systemctl', '/bin/systemctl'):
+        if os.access(systemctl, os.X_OK):
+            return [systemctl, '--no-ask-password', action, DISPLAY_MANAGER]
+    raise ValueError('Could not find the system systemctl executable.')
+
+
+def set_desktop(action, interactive=False):
+    command = desktop_command(action)
     if desktop_state() == 'unavailable':
         raise ValueError('Desktop control requires a systemd display manager.')
-    command = ['systemctl', '--no-ask-password', action, DISPLAY_MANAGER]
     result = subprocess.run(command, capture_output=True, text=True)
     if result.returncode and shutil.which('sudo'):
         result = subprocess.run(['sudo', *([] if interactive else ['-n']), *command],
                                 stdin=None if interactive else subprocess.DEVNULL, capture_output=True, text=True)
     if result.returncode:
-        raise ValueError(f'Could not {action} the desktop. {result.stderr.strip()} '
-                         'Use bash settings.sh from a text console or SSH for administrator access.')
+        hint = ('Run bash settings.sh from a text console or SSH for administrator access.' if interactive else
+                'On the PC, run bash settings.sh as the studio user and choose 4 (Authorize web desktop controls).')
+        raise ValueError(f'Could not {action} the desktop. {result.stderr.strip()} {hint}')

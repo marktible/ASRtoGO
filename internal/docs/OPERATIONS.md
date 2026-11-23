@@ -67,8 +67,13 @@ login from the same menu or run `sudo systemctl start display-manager.service`
 at the console. Open desktop applications close when the display manager stops.
 The boot target stays the same. Web controls use the studio user's systemd
 permissions or an existing noninteractive sudo grant for the exact display
-manager command. If authorization is required, use option 3 in
-`bash settings.sh` from the text console or SSH to authenticate locally.
+manager command. To authorize the web buttons, run `bash settings.sh` as the
+Linux account that starts the studio. Choose **4. Authorize web desktop controls**,
+review the two commands, and authenticate locally with sudo. The terminal validates
+the rule with visudo before installing it in `/etc/sudoers.d/`. On hosts that
+include that directory, the rule takes effect immediately. Retry in the browser.
+To revoke the grant, run the removal command printed by the terminal.
+For a one-time desktop stop or restore, choose option 3 from SSH or a text console.
 
 ## Updating the inference backends
 

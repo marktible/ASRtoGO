@@ -428,13 +428,50 @@ class PortableTests(unittest.TestCase):
     def test_desktop_control_targets_display_manager(self):
         maintenance = load_module('test_maintenance', self.root / 'internal/scripts/maintenance.py')
         with patch.object(maintenance, 'desktop_state', return_value='active'), \
+             patch.object(maintenance.os, 'access', return_value=True), \
              patch.object(maintenance.subprocess, 'run', return_value=Mock(returncode=0)) as run:
             for action in ('stop', 'start'):
                 maintenance.set_desktop(action)
                 self.assertEqual(run.call_args.args[0],
-                                 ['systemctl', '--no-ask-password', action, 'display-manager.service'])
+                                 ['/usr/bin/systemctl', '--no-ask-password', action, 'display-manager.service'])
             with self.assertRaises(ValueError):
                 maintenance.set_desktop('disable')
+
+    def test_desktop_authorization_validates_before_publishing(self):
+        scripts = self.root / 'internal/scripts'
+        with patch.object(sys, 'path', [str(scripts), *sys.path]):
+            settings = load_module('test_settings', scripts / 'settings.py')
+        # Run the file operations as the test user inside the temporary project.
+        run = subprocess.run
+        valid = True
+        def local_sudo(command, **options):
+            self.assertEqual(command[:2], ['sudo', '--'])
+            args = [arg.replace('/etc/sudoers.d/', str(self.base) + '/') for arg in command[2:]]
+            if args[0] == 'visudo':
+                self.assertEqual(args[1:3], ['-c', '-f'])
+                if not valid:
+                    raise subprocess.CalledProcessError(1, command)
+                return
+            return run(args, **options)
+
+        with patch('builtins.input', return_value='y'), patch('builtins.print'), \
+             patch.object(settings.os, 'getuid', return_value=1000), \
+             patch.object(settings.os, 'access', return_value=True), \
+             patch.object(settings.maintenance, 'desktop_state', return_value='active'), \
+             patch.object(settings.subprocess, 'run', side_effect=local_sudo):
+            target = self.base / '99-asrtogo-desktop-1000'
+            for _ in range(2):
+                settings.authorize_web_desktop()
+            self.assertEqual(target.read_text(), '#1000 ALL=(root) NOPASSWD: '
+                             '/usr/bin/systemctl --no-ask-password stop display-manager.service, '
+                             '/usr/bin/systemctl --no-ask-password start display-manager.service\n')
+            self.assertEqual(target.stat().st_mode & 0o777, 0o440)
+            target.unlink()
+            valid = False
+            with self.assertRaises(subprocess.CalledProcessError):
+                settings.authorize_web_desktop()
+            self.assertFalse(target.exists())
+            self.assertFalse(list(self.base.glob('.asrtogo-desktop-*')))
 
     def test_service_rejects_occupied_port_then_starts_and_stops(self):
         try:

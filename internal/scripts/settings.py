@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import subprocess
 import tempfile
 import time
 import urllib.error
@@ -116,9 +117,42 @@ def toggle_desktop():
     print('Desktop stopped.' if action == 'stop' else 'Graphical login started.')
 
 
+def authorize_web_desktop():
+    uid = os.getuid()
+    if uid == 0:
+        raise ValueError('Run settings.sh as the account that runs the studio. Sudo will prompt locally.')
+    if maintenance.desktop_state() == 'unavailable':
+        raise ValueError('Desktop control requires a systemd display manager.')
+    commands = [' '.join(maintenance.desktop_command(action)) for action in ('stop', 'start')]
+    rule = f'#{uid} ALL=(root) NOPASSWD: ' + ', '.join(commands) + '\n'
+    target = f'/etc/sudoers.d/99-asrtogo-desktop-{uid}'
+    print('Allow this Linux account to stop and restore the graphical desktop without a sudo prompt?')
+    print(rule.rstrip())
+    if input('Install this rule? [y/N] ').strip().lower() not in ('y', 'yes'):
+        return
+
+    def sudo(*args, **options):
+        return subprocess.run(['sudo', '--', *args], check=True, text=True, **options)
+
+    # sudoers ignores dotfiles. Publish the validated file without overwriting an administrator's rule.
+    draft = sudo('mktemp', '/etc/sudoers.d/.asrtogo-desktop-XXXXXXXX', stdout=subprocess.PIPE).stdout.strip()
+    try:
+        sudo('tee', draft, input=rule, stdout=subprocess.DEVNULL)
+        sudo('chmod', '0440', draft)
+        sudo('visudo', '-c', '-f', draft)
+        same = subprocess.run(['sudo', '--', 'cmp', '-s', draft, target])
+        if same.returncode:
+            sudo('ln', '-T', draft, target)
+    finally:
+        sudo('rm', '-f', '--', draft)
+    print('Rule installed. You can now retry Stop desktop or Restore desktop in web Settings.')
+    print(f'To revoke this permission, run sudo rm -- {target}')
+
+
 ACTIONS = {'1': ('Change web password', change_password),
            '2': ('Update backends', update_backends),
-           '3': ('Stop or restore graphical desktop', toggle_desktop)}
+           '3': ('Stop or restore graphical desktop', toggle_desktop),
+           '4': ('Authorize web desktop controls', authorize_web_desktop)}
 
 
 def main():
@@ -140,7 +174,7 @@ def main():
             continue
         try:
             action[1]()
-        except (OSError, ValueError) as error:
+        except (OSError, ValueError, subprocess.CalledProcessError) as error:
             print(f'Could not update settings: {error}')
 
 
