@@ -54,6 +54,33 @@ Debian/Ubuntu, openSUSE, and Alpine; `spirv-headers-devel` on Fedora; and
 `SPIRV-Headers` on Void. A custom installation or Vulkan SDK can be found by
 exporting `CMAKE_PREFIX_PATH` or `VULKAN_SDK` to its installation prefix.
 
+## Running jobs with the graphical desktop stopped
+
+On a PC with a systemd display manager, save any open desktop work. If you
+started the studio in a graphical terminal, finish active jobs and run
+`bash stop.sh`. Switch to a text console with Ctrl+Alt+F3 or connect over
+SSH, sign in, and run `bash start.sh` from the project directory. Keep that
+login active during processing.
+
+From another device, open **Settings → Stop desktop**. Restore the graphical
+login from the same menu or run `sudo systemctl start display-manager.service`
+at the console. Open desktop applications close when the display manager stops.
+The boot target stays the same. Web controls use the studio user's systemd
+permissions or an existing noninteractive sudo grant for the exact display
+manager command. If authorization is required, use option 3 in
+`bash settings.sh` from the text console or SSH to authenticate locally.
+
+## Updating the inference backends
+
+Choose **Update backends** in web Settings while the job queue is idle, or in
+`bash settings.sh`. The terminal asks for the web password if the studio is
+running. Updates fast-forward each clean
+checkout's tracked branch and synchronize its submodules. A detached checkout
+needs a tracking branch for updates. The build runs in alternating directories
+under `internal/data/backend-builds/`. The studio switches to the new pair
+after both binaries launch successfully. Jobs submitted during an update wait
+in the queue. Build output goes to `internal/data/backend-update.log`.
+
 ## Add your own models
 
 Models are **never downloaded by setup**. Installation works with empty model

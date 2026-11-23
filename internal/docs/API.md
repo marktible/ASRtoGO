@@ -9,6 +9,9 @@ Base: `http://<PC-LAN-IP>:8765`. Browser and client must use the login session c
 | `POST` | `/api/logout` | End session |
 | `GET` | `/api/models` | Available local LLM/ASR model IDs (project-relative paths; external configured models use absolute paths) |
 | `GET` | `/api/status` | Backend state, ownership, active/queued jobs |
+| `GET` | `/api/maintenance` | Display manager state and backend update status |
+| `POST` | `/api/desktop` | `{action:'start'\|'stop'}` restores graphical login or closes the graphical session |
+| `POST` | `/api/update-backends` | `{}` starts an idle-queue backend update and returns HTTP 202 |
 | `POST` | `/api/start` | `{which:'llm'|'asr', model:'<listed ID>'}` |
 | `POST` | `/api/stop` | `{which:'llm'|'asr'}` (app-managed servers only) |
 | `POST` | `/api/translate` | `{text,filename,kind,source,target,llm_model}`; returns job ID |
@@ -26,6 +29,8 @@ Base: `http://<PC-LAN-IP>:8765`. Browser and client must use the login session c
 ## Upload details
 
 `POST /api/upload?mode=asr_translate&format=srt&source=ja&target=en&language=ja&asr_model=<url-encoded-model-id>&llm_model=<url-encoded-model-id>`
+
+Add `auto_unload=true` to unload the translation model before ASR starts and unload the ASR model before translation starts. The queue saves this option per combined job. It defaults to false.
 
 Request body is the **raw media file**, not multipart: `Content-Type: application/octet-stream` and header `X-Upload-Name: <url-encoded filename>`.
 

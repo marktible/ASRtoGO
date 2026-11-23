@@ -73,13 +73,8 @@ async function refreshStatus() {
     for (const k of ['llm','asr']) {
       serverState[k] = status[k];
       serverOwned[k] = !!status[k+'_owned'];
-      const node = $('status-'+k);
       const ready = status[k] === 'ready';
       const loading = status[k] === 'loading';
-      node.classList.toggle('online',ready);
-      node.classList.toggle('offline',!ready && !loading);
-      node.title = `${k.toUpperCase()}: ${status[k]}`;
-      node.querySelector('span').textContent = `${k.toUpperCase()} ${ready ? 'On' : loading ? '…' : 'Off'}`;
       const label = $(k+'-state-label');
       label.textContent = ready ? (serverOwned[k] ? 'Running' : 'Running externally') : loading ? 'Starting…' : 'Not running';
       const toggle = $('toggle-'+k);
@@ -88,6 +83,7 @@ async function refreshStatus() {
       toggle.disabled = (ready || loading) && !serverOwned[k];
       toggle.title = toggle.disabled ? 'The server was started outside this web app.' : '';
     }
+    if ($('dropdown').open) await refreshMaintenance();
     if (status.active_job && !activeJob) watchJob(status.active_job);
   } catch (e) { console.warn(e); }
 }
@@ -102,7 +98,7 @@ function setLogin(yes, token='') {
   }
 }
 function startProgress(title) {
-  $('task-section').open = false; $('jobs-section').open = true;
+  $('jobs-section').open = true;
   visible('result-section',false); visible('progress-section',true);
   $('progress-heading').textContent = title;
   $('progress-message').textContent = 'Preparing...';
@@ -179,7 +175,7 @@ async function upload(mode) {
     startProgress(combo ? 'Transcribing and translating' : 'Transcribing audio');
     $('progress-message').textContent = 'Uploading audio to your PC...';
     const query = new URLSearchParams({mode,format,source,target,language:lang,
-                 asr_model:asrModel, ...(combo ? {llm_model:llmModel} : {})});
+                 asr_model:asrModel, ...(combo ? {llm_model:llmModel, auto_unload:$('combo-auto-unload').checked} : {})});
     const response = await fetch('/api/upload?'+query, {method:'POST',credentials:'same-origin',
         headers:{'Content-Type':'application/octet-stream','X-Upload-Name':encodeURIComponent(file.name),
                  'X-CSRF-Token':csrf},body:file});
@@ -386,16 +382,47 @@ function bindClipboard() {
 }
 function swap(a,b) {const t = $(a).value; $(a).value = $(b).value; $(b).value = t;}
 function closeShutdown() {visible('shutdown-modal',false); $('confirm-password').value=''; $('confirm-text').value='';}
+async function refreshMaintenance() {
+  const info = await api('/api/maintenance');
+  const desktop = $('toggle-desktop');
+  const running = info.desktop === 'active';
+  desktop.dataset.action = running ? 'stop' : 'start';
+  desktop.textContent = running ? 'Stop desktop' : 'Restore desktop';
+  desktop.disabled = !['active','inactive','failed'].includes(info.desktop);
+  $('desktop-state').textContent = running ? 'Graphical desktop running' : 'Graphical desktop';
+  $('desktop-note').textContent = info.desktop === 'unavailable' ? 'A systemd display manager is required.' :
+    info.desktop === 'inactive' ? 'Desktop stopped.' : '';
+  $('update-backends').disabled = info.update === 'running';
+  $('update-status').textContent = {running:'Updating backends…', done:'Last update completed.',
+    failed:'Update failed. See internal/data/backend-update.log on the PC.'}[info.update] || '';
+}
 function bindMenu() {
+  const dialog = $('dropdown');
+  const settingsError = message => { $('settings-error').textContent = message; };
   $('menu-button').onclick = () => {
-    const open = $('dropdown').hidden;
-    visible('dropdown', open);
-    $('menu-button').setAttribute('aria-expanded',String(open));
-    if (open) refreshStatus();
+    settingsError('');
+    dialog.showModal();
+    refreshStatus();
   };
-  document.addEventListener('click', e => {
-    if (!e.target.closest('.menu-anchor')) { visible('dropdown',false); $('menu-button').setAttribute('aria-expanded','false'); }
-  });
+  $('settings-close').onclick = () => dialog.close();
+  $('toggle-desktop').onclick = async () => {
+    const button = $('toggle-desktop');
+    const action = button.dataset.action;
+    if (action === 'stop' && !confirm('Stop the graphical desktop and close graphical apps for all users? Save your work first. To keep the studio online, launch it from SSH or a Linux text console.')) return;
+    button.disabled = true;
+    settingsError('');
+    try { await api('/api/desktop','POST',{action}); }
+    catch (e) { settingsError(e.message); }
+    await refreshMaintenance().catch(e => settingsError(e.message));
+  };
+  $('update-backends').onclick = async () => {
+    if (!confirm('Unload idle models, update llama.cpp and CrispASR, and rebuild both backends?')) return;
+    $('update-backends').disabled = true;
+    settingsError('');
+    try { await api('/api/update-backends','POST'); }
+    catch (e) { settingsError(e.message); }
+    await refreshMaintenance().catch(e => settingsError(e.message));
+  };
   for (const which of ['llm','asr']) {
     $('toggle-'+which).onclick = async () => {
       const action = serverState[which] === 'offline' ? 'start' : 'stop';
@@ -404,17 +431,17 @@ function bindMenu() {
       try {
         await api('/api/'+action,'POST',{which,model:currentModel(which)});
         await refreshStatus();
-      } catch (e) {fail(e.message);await refreshStatus();}
+      } catch (e) {settingsError(e.message);await refreshStatus();}
     };
   }
   $('stop-web').onclick = async () => {
-    visible('dropdown',false);
+    dialog.close();
     if (!confirm('Stop the website? You can restart it later by running bash start.sh on your PC.')) return;
     try {await api('/api/stopweb','POST'); fail('Website stopped. Restart it with bash start.sh on your PC.');}
     catch(e){fail(e.message);}
   };
-  $('logout').onclick = async () => {visible('dropdown',false);try{await api('/api/logout','POST');}catch(_){ } setLogin(false);};
-  $('shutdown-open').onclick = () => {visible('dropdown',false);visible('shutdown-modal',true);$('confirm-text').focus();};
+  $('logout').onclick = async () => {dialog.close();try{await api('/api/logout','POST');}catch(_){ } setLogin(false);};
+  $('shutdown-open').onclick = () => {dialog.close();visible('shutdown-modal',true);$('confirm-text').focus();};
   $('cancel-shutdown').onclick = closeShutdown;
   $('modal-backdrop').onclick = closeShutdown;
   $('confirm-shutdown').onclick = async () => {
@@ -431,6 +458,13 @@ async function initialize() {
   setupDrop('text-drop','text-file','text-selected');
   setupDrop('audio-drop','asr-file','asr-selected');
   setupDrop('combo-drop','combo-file','combo-selected');
+  const autoUnload = $('combo-auto-unload');
+  try {
+    autoUnload.checked = localStorage.getItem('asrtogo.autoUnload') === 'true';
+    autoUnload.onchange = () => {
+      try { localStorage.setItem('asrtogo.autoUnload', String(autoUnload.checked)); } catch (_) {}
+    };
+  } catch (_) {} // The checkbox also works when browser storage is unavailable.
   $('source-text').oninput = () => {$('character-count').textContent = $('source-text').value.length.toLocaleString()+' characters';};
   $('swap-lang').onclick = () => swap('source-lang','target-lang');
   $('combo-swap').onclick = () => swap('combo-source','combo-target');

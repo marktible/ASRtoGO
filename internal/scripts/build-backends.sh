@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+update=false
+if [[ $# == 1 && $1 == --update ]]; then update=true
+elif (( $# )); then echo 'Usage: build-backends.sh [--update]' >&2; exit 2
+fi
 source "$ROOT/internal/scripts/dependencies.sh"
 check_dependencies
 mkdir -p "$ROOT/internal/backends" "$ROOT/internal/data"
@@ -20,9 +24,15 @@ clone_backend() {
   elif [[ ! -d "$directory/.git" && ! -f "$directory/.git" ]]; then
     echo "Refusing to replace non-Git directory: $directory" >&2
     return 1
+  elif $update; then
+    if [[ -n $(git -C "$directory" status --porcelain) ]]; then
+      echo "Save local changes in $directory before updating." >&2
+      return 1
+    fi
+    git -C "$directory" pull --ff-only
   fi
   # Existing checkouts are not pulled/reset implicitly. Optional refs are explicit.
-  if [[ -n $ref ]]; then git -C "$directory" checkout "$ref"; fi
+  if ! $update && [[ -n $ref ]]; then git -C "$directory" checkout "$ref"; fi
   git -C "$directory" submodule update --init --recursive
 }
 
@@ -32,6 +42,7 @@ build_backend() {
   local target=$1
   shift
   local build="$directory/build-studio"
+  if $update; then build="$build_root/$(basename "$directory")"; fi
   # Native binaries and absolute CMake caches must be rebuilt after a move.
   local machine
   machine="$(python3 - "$directory" "$NATIVE" "$LTO" <<'PY'
@@ -62,6 +73,12 @@ PY
 }
 
 echo "Building Release + Vulkan, native CPU=$NATIVE, LTO=$LTO, parallel jobs=$BUILD_JOBS"
+build_root="$ROOT/internal/data/backend-builds"
+if $update; then
+  slot=a
+  if [[ $(readlink "$build_root/current" || true) == a ]]; then slot=b; fi
+  build_root="$build_root/$slot"
+fi
 clone_backend https://github.com/ggml-org/llama.cpp.git "$ROOT/internal/backends/llama.cpp" "${LLAMA_REF:-}"
 clone_backend https://github.com/CrispStrobe/CrispASR.git "$ROOT/internal/backends/CrispASR" "${CRISPASR_REF:-}"
 build_backend "$ROOT/internal/backends/llama.cpp" llama-server \
@@ -70,12 +87,22 @@ build_backend "$ROOT/internal/backends/llama.cpp" llama-server \
 build_backend "$ROOT/internal/backends/CrispASR" crispasr \
   -DCRISPASR_BUILD_TESTS=OFF -DCRISPASR_BUILD_EXAMPLES=ON -DCRISPASR_BUILD_SERVER=ON \
   -DCRISPASR_PORTABLE_CPU=OFF -DCRISPASR_CURL=OFF
-for binary in "$ROOT/internal/backends/llama.cpp/build-studio/bin/llama-server" \
-              "$ROOT/internal/backends/CrispASR/build-studio/bin/crispasr"; do
+for entry in llama.cpp:llama-server CrispASR:crispasr; do
+  project=${entry%:*}
+  binary="$ROOT/internal/backends/$project/build-studio/bin/${entry#*:}"
+  if $update; then binary="$build_root/$project/bin/${entry#*:}"; fi
   [[ -x $binary ]] || { echo "Build did not produce $binary" >&2; exit 1; }
   "$binary" --help > "$ROOT/internal/data/$(basename "$binary")-check.log" 2>&1 || {
     echo "Backend cannot launch: $binary. Check internal/data/$(basename "$binary")-check.log" >&2
     exit 1
   }
 done
+if $update; then
+  builds=$(dirname "$build_root")
+  ln -sfn "$slot" "$builds/current.next"
+  mv -Tf "$builds/current.next" "$builds/current"
+elif [[ -L $build_root/current ]]; then
+  # A regular rebuild (for example after relocation) has refreshed the bundled binaries.
+  rm -- "$build_root/current"
+fi
 echo 'Both backends built successfully.'

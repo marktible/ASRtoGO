@@ -378,6 +378,64 @@ class PortableTests(unittest.TestCase):
             self.assertEqual(packages[0], manager)
             self.assertIn(headers, packages)
 
+    def test_auto_unload_switches_only_for_enabled_combined_jobs(self):
+        app = self.configured_app()
+        jid = 'a' * 32
+        app.JOBS_STATE[jid] = {}
+        loaded = {'llm'}
+        events = []
+
+        def stop(kind):
+            events.append(('stop', kind))
+            loaded.remove(kind)
+
+        def start(kind, model):
+            events.append(('start', kind))
+            loaded.add(kind)
+
+        with patch.object(app, 'start_backend', start), patch.object(app, 'stop_backend', stop), \
+             patch.object(app, 'running_owned', loaded.__contains__), \
+             patch.object(app, 'health', lambda kind: 'ready' if kind in loaded else 'offline'):
+            app.JOB_PARAMS[jid] = {'mode': 'asr_translate', 'auto_unload': True}
+            for kind in ('asr', 'llm', 'asr'):
+                app.wait_ready(kind, 'model', jid)
+                self.assertEqual(loaded, {kind})
+            self.assertEqual(events, [('stop', 'llm'), ('start', 'asr'), ('stop', 'asr'),
+                                      ('start', 'llm'), ('stop', 'llm'), ('start', 'asr')])
+            for params in ({'mode': 'asr_translate'}, {'mode': 'asr_translate', 'auto_unload': False},
+                           {'mode': 'asr'}, {'mode': 'translate'}):
+                app.JOB_PARAMS[jid] = params
+                events.clear()
+                app.wait_ready('llm', 'model', jid)
+                self.assertEqual(events, [('start', 'llm')])
+
+    def test_update_publishes_only_a_working_pair(self):
+        build = 'internal/scripts/build-backends.sh'
+        self.run_script(build)
+        self.run_script(build, '--update')
+        maintenance = load_module('test_maintenance', self.root / 'internal/scripts/maintenance.py')
+        current = self.root / 'internal/data/backend-builds/current'
+        first = current.resolve()
+        binary = self.root / 'internal/backends/llama.cpp/build-studio/bin/llama-server'
+        self.assertEqual(maintenance.backend_binary('llm', binary), first / 'llama.cpp/bin/llama-server')
+        self.assertTrue(maintenance.backend_binary('llm', binary).is_file())
+        self.run_script(build, '--update', FAIL_BUILD='1', success=False)
+        self.assertEqual(current.resolve(), first)
+        self.run_script(build, '--update')
+        self.assertNotEqual(current.resolve(), first)
+        self.assertIn('pull', [arg for args in self.tool_calls() for arg in args])
+
+    def test_desktop_control_targets_display_manager(self):
+        maintenance = load_module('test_maintenance', self.root / 'internal/scripts/maintenance.py')
+        with patch.object(maintenance, 'desktop_state', return_value='active'), \
+             patch.object(maintenance.subprocess, 'run', return_value=Mock(returncode=0)) as run:
+            for action in ('stop', 'start'):
+                maintenance.set_desktop(action)
+                self.assertEqual(run.call_args.args[0],
+                                 ['systemctl', '--no-ask-password', action, 'display-manager.service'])
+            with self.assertRaises(ValueError):
+                maintenance.set_desktop('disable')
+
     def test_service_rejects_occupied_port_then_starts_and_stops(self):
         try:
             occupied = socket.socket()

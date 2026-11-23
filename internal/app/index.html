@@ -3,109 +3,95 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0c1322">
-<title>Local AI Studio</title>
+<meta name="theme-color" content="#f5f6f2">
+<title>ASRtoGO · Local AI Studio</title>
 <link rel="stylesheet" href="/style.css">
 <script src="/script.js" defer></script>
 </head>
 <body>
 <main class="app">
   <header class="topbar">
-    <div class="branding">
-      <div class="brand-icon" aria-hidden="true">✳</div>
-      <div><b>Local AI Studio</b><small>Running on your Linux PC</small></div>
-    </div>
-    <div class="header-actions" id="authorized-actions" hidden>
-      <div class="server-indicators" aria-label="Server status">
-        <span class="status-pill" id="status-llm"><i></i><span>LLM</span></span>
-        <span class="status-pill" id="status-asr"><i></i><span>ASR</span></span>
-      </div>
-      <div class="menu-anchor">
-        <button type="button" class="settings-button" id="menu-button" aria-expanded="false" aria-controls="dropdown">⚙ <span>Settings</span></button>
-        <div class="dropdown" id="dropdown" hidden>
-          <div class="settings-heading"><b>Settings</b><span>Local servers</span></div>
-          <div class="settings-section">
-            <div class="settings-label">Translation model</div>
-            <select id="settings-llm-model" aria-label="Translation model"></select>
-            <div class="server-line"><span id="llm-state-label">Server off</span><button class="server-toggle" type="button" id="toggle-llm" data-server="llm">Start</button></div>
-          </div>
-          <div class="settings-section">
-            <div class="settings-label">Speech model</div>
-            <select id="settings-asr-model" aria-label="ASR model"></select>
-            <div class="server-line"><span id="asr-state-label">Server off</span><button class="server-toggle" type="button" id="toggle-asr" data-server="asr">Start</button></div>
-          </div>
-          <div class="settings-actions">
-            <button type="button" id="stop-web" class="menu-item">Stop website</button>
-            <button type="button" id="logout" class="menu-item">Log out</button>
-            <button type="button" id="shutdown-open" class="menu-item danger">⏻ Shut down PC</button>
-          </div>
-        </div>
-      </div>
+    <div class="branding"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>ASRtoGO</div>
+    <div id="authorized-actions" hidden>
+      <button type="button" class="secondary-btn" id="menu-button" aria-haspopup="dialog" aria-controls="dropdown">Settings</button>
+      <dialog id="dropdown" class="settings-dialog" aria-labelledby="settings-title">
+        <div class="dialog-head"><h2 id="settings-title">Settings</h2><button type="button" class="close-btn" id="settings-close" aria-label="Close settings">×</button></div>
+        <section class="settings-section"><h3>Models</h3>
+          <div class="model-row"><label for="settings-llm-model">Translation</label><span class="model-state" id="llm-state-label"></span>
+            <select id="settings-llm-model"></select><button type="button" id="toggle-llm">Start</button></div>
+          <div class="model-row"><label for="settings-asr-model">Speech recognition</label><span class="model-state" id="asr-state-label"></span>
+            <select id="settings-asr-model"></select><button type="button" id="toggle-asr">Start</button></div>
+          <div class="setting-line"><span>llama.cpp and CrispASR</span><button type="button" id="update-backends">Update backends</button></div>
+          <p class="setting-note" id="update-status" role="status"></p>
+        </section>
+        <section class="settings-section"><h3>Computer</h3>
+          <div class="setting-line"><span id="desktop-state">Graphical desktop</span><button type="button" id="toggle-desktop" disabled>Stop desktop</button></div>
+          <p class="setting-note" id="desktop-note" role="status"></p>
+          <div class="host-actions"><button type="button" id="stop-web">Stop website</button><button type="button" id="shutdown-open" class="danger-text">Shut down PC</button></div>
+        </section>
+        <p class="form-error" id="settings-error" role="alert"></p>
+        <button type="button" id="logout">Log out</button>
+      </dialog>
     </div>
   </header>
 
   <section class="login-panel card" id="login-panel">
-    <div class="login-icon">✳</div>
-    <h1>Your local AI, anywhere at home.</h1>
-    <p>Sign in to translate text or turn speech into subtitles.</p>
+    <h1>Sign in to ASRtoGO</h1>
+    <p>Use your web password to access the studio.</p>
     <form id="login-form">
       <label for="login-password">Password</label>
       <input type="password" id="login-password" autocomplete="current-password" placeholder="Enter your web password" required>
-      <button class="primary-btn" type="submit">Open studio <span>→</span></button>
+      <button class="primary-btn" type="submit">Open studio</button>
     </form>
     <p class="form-error" id="login-error" role="alert"></p>
-    <p class="private-note">Only use this site on your trusted home network or Tailscale.</p>
   </section>
 
   <div id="workspace" hidden>
-    <div class="page-title">
-      <div><h1>What would you like to do?</h1><p>Choose a task and add your file or text.</p></div>
-      <button type="button" class="paste-button" id="paste-clipboard">▤ Paste</button>
-    </div>
-    <details id="task-section" class="card fold task-fold" open>
-      <summary class="fold-summary"><span class="fold-name"><span class="fold-symbol">✦</span><span><strong>New task</strong><small>Translate · ASR · ASR + Translate</small></span></span><span class="fold-chevron">⌄</span></summary>
-      <div class="fold-content"><div class="editor-card">
+    <div class="page-title"><h1>New job</h1><button type="button" class="secondary-btn" id="paste-clipboard">Paste from clipboard</button></div>
+    <section class="card editor-card" aria-label="New job">
       <nav class="workflow-tabs" role="tablist" aria-label="Workflow">
-        <button type="button" class="workflow-tab active" id="tab-translate" data-tab="translate" role="tab" aria-selected="true"><span class="tab-icon">文</span> Translate</button>
-        <button type="button" class="workflow-tab" id="tab-asr" data-tab="asr" role="tab" aria-selected="false"><span class="tab-icon">♫</span> ASR</button>
-        <button type="button" class="workflow-tab" id="tab-asr-translate" data-tab="asr_translate" role="tab" aria-selected="false"><span class="tab-icon">✦</span> ASR + Translate</button>
+        <button type="button" class="workflow-tab active" id="tab-translate" data-tab="translate" role="tab" aria-selected="true">Translate</button>
+        <button type="button" class="workflow-tab" id="tab-asr" data-tab="asr" role="tab" aria-selected="false">ASR</button>
+        <button type="button" class="workflow-tab" id="tab-asr-translate" data-tab="asr_translate" role="tab" aria-selected="false">ASR + Translate</button>
       </nav>
       <section class="pane" id="pane-translate" role="tabpanel">
-        <div class="pane-title"><h2>Translate text</h2><p>Text, documents, or subtitles</p></div>
         <div class="langbar">
           <div class="lang-select"><label for="source-lang">FROM</label><select id="source-lang"><option value="ja">Japanese</option><option value="en">English</option></select></div>
           <button type="button" id="swap-lang" class="swap-button" aria-label="Swap languages">⇄</button>
           <div class="lang-select"><label for="target-lang">TO</label><select id="target-lang"><option value="en">English</option><option value="ja">Japanese</option></select></div>
         </div>
-        <div class="input-toggle"><button type="button" id="text-mode" class="tiny-tab active">Paste text</button><button type="button" id="file-mode" class="tiny-tab">Upload file</button></div>
-        <div id="text-panel"><textarea id="source-text" spellcheck="false" placeholder="Paste Japanese or English text here…"></textarea><div class="input-foot"><span id="character-count">0 characters</span></div></div>
-        <div id="file-panel" hidden><label class="drop-zone" id="text-drop" for="text-file"><span class="drop-icon">⇧</span><strong>Choose a text file</strong><span>Tap, drop, or paste a TXT, SRT, or VTT</span></label><input id="text-file" type="file" accept=".txt,.srt,.vtt" hidden><div class="selected-file" id="text-selected" hidden></div></div>
-        <div class="editor-actions"><span class="action-hint">The result will appear in Jobs</span><button type="button" id="translate-btn" class="primary-btn translate-btn">Translate →</button></div>
+        <div class="input-toggle"><button type="button" id="text-mode" class="tiny-tab active">Text</button><button type="button" id="file-mode" class="tiny-tab">Upload file</button></div>
+        <div id="text-panel"><textarea aria-label="Text to translate" id="source-text" spellcheck="false" placeholder="Paste Japanese or English text here…"></textarea><div class="input-foot"><span id="character-count">0 characters</span></div></div>
+        <div id="file-panel" hidden><label class="drop-zone" id="text-drop" for="text-file"><strong>Choose a text file</strong><span>Tap, drop, or paste a TXT, SRT, or VTT</span></label><input id="text-file" type="file" accept=".txt,.srt,.vtt" class="file-input"><div class="selected-file" id="text-selected" hidden></div></div>
+        <div class="editor-actions"><button type="button" id="translate-btn" class="primary-btn translate-btn">Translate</button></div>
       </section>
       <section class="pane" id="pane-asr" role="tabpanel" hidden>
-        <div class="pane-title"><h2>Transcribe audio</h2><p>Turn speech into text or subtitles</p></div>
         <div class="langbar"><div class="lang-select"><label for="asr-language">LANGUAGE</label><select id="asr-language"><option value="ja">Japanese</option><option value="en">English</option><option value="auto">Auto-detect</option></select></div><div class="lang-select"><label for="asr-format">OUTPUT</label><select id="asr-format"><option value="srt">SRT subtitles</option><option value="vtt">VTT subtitles</option><option value="txt">Plain text</option></select></div></div>
-        <label class="drop-zone" id="audio-drop" for="asr-file"><span class="drop-icon">♫</span><strong>Drop audio or video here</strong><span>or tap to choose a file · up to 100 MB</span></label><input id="asr-file" type="file" accept="audio/*,video/mp4,video/webm,.mkv,.mov" hidden><div class="selected-file" id="asr-selected" hidden></div>
-        <div class="editor-actions"><span class="action-hint">CrispASR</span><button type="button" id="asr-btn" class="primary-btn translate-btn">Transcribe →</button></div>
+        <label class="drop-zone" id="audio-drop" for="asr-file"><strong>Drop audio or video here</strong><span>or tap to choose a file · up to 100 MB</span></label><input id="asr-file" type="file" accept="audio/*,video/mp4,video/webm,.mkv,.mov" class="file-input"><div class="selected-file" id="asr-selected" hidden></div>
+        <div class="editor-actions"><button type="button" id="asr-btn" class="primary-btn translate-btn">Transcribe</button></div>
       </section>
       <section class="pane" id="pane-asr_translate" role="tabpanel" hidden>
-        <div class="pane-title"><h2>Transcribe & translate</h2><p>From speech to translated subtitles</p></div>
         <div class="langbar"><div class="lang-select"><label for="combo-source">SPOKEN LANGUAGE</label><select id="combo-source"><option value="ja">Japanese</option><option value="en">English</option></select></div><button type="button" id="combo-swap" class="swap-button" aria-label="Swap languages">⇄</button><div class="lang-select"><label for="combo-target">TRANSLATE TO</label><select id="combo-target"><option value="en">English</option><option value="ja">Japanese</option></select></div></div>
         <div class="format-row"><label for="combo-format">SAVE AS</label><select id="combo-format"><option value="srt">SRT subtitles</option><option value="vtt">VTT subtitles</option><option value="txt">Plain text</option></select></div>
-        <label class="drop-zone" id="combo-drop" for="combo-file"><span class="drop-icon">♫ → 文</span><strong>Drop audio or video here</strong><span>or tap to choose a file · up to 100 MB</span></label><input id="combo-file" type="file" accept="audio/*,video/mp4,video/webm,.mkv,.mov" hidden><div class="selected-file" id="combo-selected" hidden></div>
-        <div class="editor-actions"><span class="action-hint">CrispASR + llama.cpp</span><button type="button" id="combo-btn" class="primary-btn translate-btn">Transcribe + Translate →</button></div>
+        <label class="drop-zone" id="combo-drop" for="combo-file"><strong>Drop audio or video here</strong><span>or tap to choose a file · up to 100 MB</span></label><input id="combo-file" type="file" accept="audio/*,video/mp4,video/webm,.mkv,.mov" class="file-input"><div class="selected-file" id="combo-selected" hidden></div>
+        <div class="editor-actions">
+          <div>
+            <label><input type="checkbox" id="combo-auto-unload" aria-describedby="auto-unload-hint"> Auto unload</label>
+            <div class="action-hint" id="auto-unload-hint">Keep only the model needed for the current step in memory.</div>
+          </div>
+          <button type="button" id="combo-btn" class="primary-btn translate-btn">Transcribe &amp; translate</button>
+        </div>
       </section>
-      </div></div>
-    </details>
+    </section>
 
     <p id="workspace-error" class="workspace-error" role="alert" hidden></p>
     <section id="progress-section" class="progress-card card" hidden>
-      <div class="progress-title"><span class="rotor">✳</span><div><strong id="progress-heading">Processing</strong><p id="progress-message">Preparing…</p></div><b id="progress-pct">…</b></div>
+      <div class="progress-title"><div><strong id="progress-heading">Processing</strong><p id="progress-message">Preparing…</p></div><b id="progress-pct">…</b></div>
       <div class="progress-track"><div id="progress-fill" class="progress-fill"></div></div>
       <button type="button" class="secondary-btn cancel-btn" id="cancel-btn">Cancel job</button>
     </section>
     <details id="result-section" class="result-card card fold" hidden>
-      <summary class="fold-summary"><span class="fold-name"><span class="fold-symbol">▤</span><span><strong>Result</strong><small id="result-subtitle">Your saved transcription or translation</small></span></span><span class="fold-chevron">⌄</span></summary>
+      <summary class="fold-summary"><span class="fold-name"><span><strong>Result</strong><small id="result-subtitle">Your saved transcription or translation</small></span></span><span class="fold-chevron">⌄</span></summary>
       <div class="fold-content">
         <div id="audio-panel" class="audio-panel" hidden>
           <div class="audio-head"><strong>Original audio</strong><span id="audio-filename"></span></div>
@@ -114,7 +100,7 @@
             <button type="button" class="secondary-btn seek-btn" id="skip-back" aria-label="Back 10 seconds">↶ 10 sec</button>
             <button type="button" class="secondary-btn seek-btn" id="skip-forward" aria-label="Forward 10 seconds">10 sec ↷</button>
           </div>
-          <small>Playback availability depends on your browser and the file codec.</small>
+
         </div>
         <div class="result-header"><h3 id="result-heading">Translation</h3><button type="button" id="download-btn" class="download-btn">↓ Download</button></div>
         <div class="result-views" id="result-views" hidden>
@@ -125,14 +111,13 @@
         <p id="preview-note" class="preview-note" hidden></p>
       </div>
     </details>
-    <details id="jobs-section" class="jobs-card card fold" open>
-      <summary class="fold-summary"><span class="fold-name"><span class="fold-symbol">▦</span><span><strong>Jobs <span class="jobs-count" id="jobs-count"></span></strong><small>Queued, processing, and completed files</small></span></span><span class="fold-chevron">⌄</span></summary>
+    <details id="jobs-section" class="jobs-card fold">
+      <summary class="fold-summary"><span class="fold-name"><span><strong>Job history <span class="jobs-count" id="jobs-count"></span></strong></span></span><span class="fold-chevron">⌄</span></summary>
       <div class="fold-content">
         <div class="jobs-tools"><span>Stored on this PC</span><button type="button" class="secondary-btn" id="refresh-jobs">↻ Refresh</button></div>
         <div id="jobs-list" class="job-list"><p class="jobs-empty">Nothing here yet.</p></div>
       </div>
     </details>
-    <footer>Local AI Studio <span>Linux · llama.cpp · CrispASR</span></footer>
   </div>
 </main>
 <div class="modal-wrap" id="shutdown-modal" hidden><div class="modal-backdrop" id="modal-backdrop"></div><div class="modal card" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div class="warn-icon">⏻</div><h2 id="modal-title">Shut down your PC?</h2><p>This will stop the website and the AI models. Finish any jobs first.</p><label for="confirm-text">TYPE <b>SHUTDOWN</b></label><input id="confirm-text" autocomplete="off" placeholder="SHUTDOWN"><label for="confirm-password">PASSWORD</label><input type="password" id="confirm-password" autocomplete="off" placeholder="Web password"><p class="form-error" id="shutdown-error" role="alert"></p><div class="modal-buttons"><button type="button" id="cancel-shutdown" class="secondary-btn">Cancel</button><button type="button" id="confirm-shutdown" class="danger-btn">Power off</button></div></div></div>

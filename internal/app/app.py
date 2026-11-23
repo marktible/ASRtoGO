@@ -28,6 +28,7 @@ ASSETS = Path(__file__).resolve().parent
 ROOT = ASSETS.parent.parent
 sys.path.insert(0, str(ROOT))
 from internal.scripts.hardware import detect
+from internal.scripts import maintenance
 
 BASE = ROOT / 'internal/data'
 if not (BASE / 'config.json').is_file():
@@ -159,20 +160,18 @@ def validate_model(kind, candidate):
 def stop_backend(kind):
     with LOCK:
         proc = PROCESSES[kind]
+        if proc is not None and proc.poll() is None:
+            try:
+                os.killpg(proc.pid, signal.SIGTERM)
+                try:
+                    proc.wait(timeout=8)
+                except subprocess.TimeoutExpired:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                    proc.wait(timeout=8)
+            except ProcessLookupError:
+                proc.wait(timeout=8)
         PROCESSES[kind] = None
         PROCESS_MODELS[kind] = None
-    if proc is None or proc.poll() is not None:
-        return
-    try:
-        os.killpg(proc.pid, signal.SIGTERM)
-        proc.wait(timeout=8)
-    except subprocess.TimeoutExpired:
-        try:
-            os.killpg(proc.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-    except ProcessLookupError:
-        pass
 
 
 def start_backend(kind, model_id):
@@ -185,14 +184,14 @@ def start_backend(kind, model_id):
         elif health(kind) in ('ready', 'loading'):
             raise RuntimeError(f'Port {LLM_PORT if kind == "llm" else ASR_PORT} is occupied by an externally started server. Stop that server first so model selection works.')
         if kind == 'llm':
-            binary = Path(CFG['llama_bin'])
+            binary = maintenance.backend_binary(kind, CFG['llama_bin'])
             command = [str(binary), '-m', str(local_path(model)), '--alias', 'local-translation',
                        '--host', '127.0.0.1', '--port', str(LLM_PORT), '-ngl', '99',
                        '-fa', 'on', '-c', str(CONTEXT_TOKENS), '-b', '512', '-ub', '512', '-t', str(THREADS),
                        '-np', '1', '--temp', '0', '--jinja', '--no-prefill-assistant']
             cwd = ROOT
         else:
-            binary = Path(CFG.get('asr_bin', ''))
+            binary = maintenance.backend_binary(kind, CFG.get('asr_bin', ''))
             command = [str(binary), '--server', '--gpu-backend', 'vulkan',
                        '-m', str(local_path(model)), '-l', 'auto', '-t', str(THREADS),
                        '--host', '127.0.0.1', '--port', str(ASR_PORT)]
@@ -213,6 +212,15 @@ def start_backend(kind, model_id):
 
 
 def wait_ready(kind, model, jid):
+    params = JOB_PARAMS[jid]
+    if params['mode'] == 'asr_translate' and params.get('auto_unload'):
+        ensure_not_cancelled(jid)
+        other = 'llm' if kind == 'asr' else 'asr'
+        if running_owned(other):
+            stop_backend(other)
+        elif health(other) != 'offline':
+            raise RuntimeError(f'Auto unload requires stopping the externally started {other.upper()} server first.')
+        ensure_not_cancelled(jid)
     start_backend(kind, model)
     for _ in range(180):
         if JOBS_STATE[jid].get('cancel'):
@@ -674,6 +682,14 @@ def background_worker():
                     continue
                 BUSY_JOB = jid
                 params = JOB_PARAMS[jid].copy()
+                updating = maintenance.update_status() == 'running'
+                if updating:
+                    set_progress(jid, message='Waiting for the backend update...')
+            if updating:
+                while maintenance.update_status() == 'running' and not JOBS_STATE.get(jid, {}).get('cancel', True):
+                    time.sleep(1)
+                if JOBS_STATE.get(jid, {}).get('cancel', True):
+                    continue
             textpath = JOBS / params['source_file']
             if not textpath.is_file():
                 raise RuntimeError('Input file was removed before processing')
@@ -1006,7 +1022,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({'error': 'Login required'}, 401)
         if path == '/api/models':
             return self.send_json({'llm': scan_models('llm'), 'asr': scan_models('asr'),
-                                   'asr_available': Path(CFG.get('asr_bin', '')).is_file()})
+                                   'asr_available': maintenance.backend_binary('asr', CFG.get('asr_bin', '')).is_file()})
         if path == '/api/jobs':
             with LOCK:
                 records = [self.public_job(j) for j in JOBS_STATE.values()]
@@ -1017,6 +1033,8 @@ class Handler(BaseHTTPRequestHandler):
                                    'llm_owned': running_owned('llm'), 'asr_owned': running_owned('asr'),
                                    'poweroff': CFG.get('allow_loginctl') or CFG.get('allow_systemctl') or CFG.get('allow_sudo_shutdown'),
                                    'active_job': BUSY_JOB, 'queued': JOB_QUEUE.qsize()})
+        if path == '/api/maintenance':
+            return self.send_json({'desktop': maintenance.desktop_state(), 'update': maintenance.update_status()})
         m = re.fullmatch(r'/api/job/([a-f0-9]{32})', path)
         if m:
             with LOCK:
@@ -1119,6 +1137,8 @@ class Handler(BaseHTTPRequestHandler):
                     '.translated.' if mode == 'asr_translate' else '.transcript.') + fmt
                 params = {'mode': mode, 'format': fmt, 'asr_model': asr_model, 'llm_model': llm_model,
                           'source': source, 'target': target, 'language': lang}
+                if mode == 'asr_translate':
+                    params['auto_unload'] = opts.get('auto_unload', ['false'])[0] == 'true'
                 create_job(jid, name, output_name, mode, params, source_name, 'uploading')
                 try:
                     with pathfile.open('wb') as output:
@@ -1137,19 +1157,36 @@ class Handler(BaseHTTPRequestHandler):
                 JOB_QUEUE.put(jid)
                 return self.send_json({'id': jid, 'saved': True})
             body = self.body_json()
+            if path == '/api/desktop':
+                maintenance.set_desktop(body.get('action'))
+                return self.send_json({'desktop': maintenance.desktop_state()})
+            if path == '/api/update-backends':
+                with LOCK:
+                    if BUSY_JOB or any(s['status'] in ('uploading', 'queued', 'loading', 'running') for s in JOBS_STATE.values()):
+                        raise ValueError('Finish queued jobs before updating the backends.')
+                    if maintenance.update_status() == 'running':
+                        raise ValueError('A backend update is already running.')
+                    for kind in ('llm', 'asr'):
+                        stop_backend(kind)
+                    update = maintenance.launch_update()
+                    threading.Thread(target=update.wait, daemon=True).start()
+                return self.send_json({'update': 'running'}, 202)
             if path in ('/api/start', '/api/stop'):
                 which = body.get('which', 'llm')
                 if which not in ('llm', 'asr'):
                     raise ValueError('Unknown server')
-                if BUSY_JOB or JOB_QUEUE.qsize():
-                    raise ValueError('Jobs are processing or queued. Finish them before changing servers.')
-                if path.endswith('start'):
-                    model = validate_model(which, body.get('model'))
-                    start_backend(which, model)
-                else:
-                    if not running_owned(which):
-                        raise ValueError('Server not started by this app; cannot stop it')
-                    stop_backend(which)
+                with LOCK:
+                    if maintenance.update_status() == 'running':
+                        raise ValueError('Wait for the backend update to finish.')
+                    if BUSY_JOB or JOB_QUEUE.qsize():
+                        raise ValueError('Jobs are processing or queued. Finish them before changing servers.')
+                    if path.endswith('start'):
+                        model = validate_model(which, body.get('model'))
+                        start_backend(which, model)
+                    else:
+                        if not running_owned(which):
+                            raise ValueError('Server not started by this app; cannot stop it')
+                        stop_backend(which)
                 return self.send_json({'ok': True})
             if path == '/api/translate':
                 text = body.get('text', '')

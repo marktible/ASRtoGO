@@ -47,8 +47,20 @@ trusted LAN/private connection; do not expose it to the public internet.
 bash settings.sh
 ```
 
-Choose **Change web password** to set a new password. The web app restarts to
-apply it when running. Future settings will appear in this menu.
+In **ASR + Translate**, check **Auto unload** to keep one model in memory at a
+time. The studio remembers your choice in this browser and saves it with each job.
+
+In the web app, **Settings → Update backends** updates and rebuilds llama.cpp
+and CrispASR. Start an update when the queue is idle. You can close the browser
+while it builds. Both new binaries must pass their launch checks before jobs
+use them. The terminal settings menu also supports offline updates.
+
+**Settings → Stop desktop** closes the graphical session to free memory on a
+systemd PC. Save your work first. For headless use, launch the studio from SSH
+or a Linux text console before stopping the desktop. **Restore desktop** brings
+back the graphical login. Both actions are also available in `bash settings.sh`.
+
+Choose **Change web password** in the terminal menu to set a new password.
 
 Everything else lives in **`internal/`**. Keep this folder with the app: it
 contains the code, backend builds, settings, and saved jobs. Older settings and
